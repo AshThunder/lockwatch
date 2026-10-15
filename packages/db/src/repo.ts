@@ -167,3 +167,50 @@ export async function useNonce(db: Db, nonce: string, maxAge = 600): Promise<boo
   const r = await db.query(`DELETE FROM siwe_nonce WHERE nonce=$1 AND created_at >= $2 RETURNING nonce`, [nonce, now() - maxAge]);
   return r.length === 1;
 }
+
+// ---------------------------------------------------------------- read models for the web app (no schema change)
+export const protectionById = async (db: Db, chainId: number, id: bigint) =>
+  (await db.query<ProtectionRow & { updated_at: string | number }>(`SELECT * FROM protection WHERE chain_id=$1 AND lock_id=$2`, [chainId, id.toString()]))[0];
+
+export const attemptById = async (db: Db, chainId: number, id: bigint) =>
+  (await db.query<{ attempts: number; last_error: string | null; next_try_at: string | number; dead: boolean }>(
+    `SELECT attempts,last_error,next_try_at,dead FROM keeper_attempt WHERE chain_id=$1 AND lock_id=$2`, [chainId, id.toString()]))[0];
+
+export type ActivityKind = "protected" | "fallback" | "registered" | "unregistered" | "retrying" | "stuck";
+export interface ActivityRow { kind: ActivityKind; lock_id: string; owner: string; mode: number; tx_hash: string | null; amount: string | null; new_lock_id: string | null; detail: string | null; ts: number }
+
+/** Keeper and vault activity, newest first: protections (by state) plus keeper retries. */
+export async function activity(db: Db, chainId: number, opts: { limit?: number; offset?: number; owner?: string; lockId?: bigint } = {}) {
+  const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100), offset = Math.max(opts.offset ?? 0, 0);
+  const where: string[] = ["p.chain_id=$1"]; const args: unknown[] = [chainId];
+  if (opts.owner) { args.push(lc(opts.owner)); where.push(`p.owner=$${args.length}`); }
+  if (opts.lockId !== undefined) { args.push(opts.lockId.toString()); where.push(`p.lock_id=$${args.length}`); }
+  const rows = await db.query<{ lock_id: string; owner: string; mode: number; active: boolean; tx_hash: string | null; amount: string | null; new_lock_id: string | null; fallback_reason: string | null; updated_at: string | number; attempts: number | null; last_error: string | null; dead: boolean | null }>(
+    `SELECT p.lock_id,p.owner,p.mode,p.active,p.tx_hash,p.amount,p.new_lock_id,p.fallback_reason,p.updated_at,k.attempts,k.last_error,k.dead
+       FROM protection p LEFT JOIN keeper_attempt k ON k.chain_id=p.chain_id AND k.lock_id=p.lock_id
+      WHERE ${where.join(" AND ")} ORDER BY p.updated_at DESC, p.lock_id DESC LIMIT ${limit + 1} OFFSET ${offset}`, args);
+  const items: ActivityRow[] = rows.slice(0, limit).map((r) => {
+    const kind: ActivityKind = r.attempts && r.active ? (r.dead ? "stuck" : "retrying")
+      : r.fallback_reason ? "fallback" : !r.active && r.tx_hash ? "protected" : r.active ? "registered" : "unregistered";
+    return { kind, lock_id: String(r.lock_id), owner: r.owner, mode: Number(r.mode), tx_hash: r.tx_hash, amount: r.amount && String(r.amount), new_lock_id: r.new_lock_id && String(r.new_lock_id),
+      detail: kind === "fallback" ? r.fallback_reason : kind === "retrying" || kind === "stuck" ? r.last_error : null, ts: Number(r.updated_at) };
+  });
+  return { items, hasMore: rows.length > limit };
+}
+
+export type LockSort = "amount" | "end" | "id";
+/** Paginated lock explorer. state: expired | live | all. */
+export async function exploreLocks(db: Db, chainId: number, o: { state?: "expired" | "live" | "all"; minBtc?: bigint; sort?: LockSort; dir?: "asc" | "desc"; limit?: number; offset?: number; now?: number; excludeOver?: bigint }) {
+  const now_ = o.now ?? now(); const limit = Math.min(Math.max(o.limit ?? 25, 1), 100); const offset = Math.max(o.offset ?? 0, 0);
+  const args: unknown[] = [chainId, now_]; const where = ["chain_id=$1", "NOT withdrawn", "NOT permanent"];
+  if ((o.state ?? "expired") === "expired") where.push("lock_end <= $2"); else if (o.state === "live") where.push("lock_end > $2");
+  if (o.minBtc) { args.push(o.minBtc.toString()); where.push(`amount >= $${args.length}`); }
+  if (o.excludeOver) { args.push(o.excludeOver.toString()); where.push(`amount < $${args.length}`); }
+  const col = { amount: "amount", end: "lock_end", id: "id" }[o.sort ?? "amount"]; const dir = o.dir === "asc" ? "ASC" : "DESC";
+  const w = where.join(" AND ");
+  const [rows, cnt] = await Promise.all([
+    db.query<LockRow>(`SELECT * FROM lock WHERE ${w} ORDER BY ${col} ${dir}, id ASC LIMIT ${limit} OFFSET ${offset}`, args),
+    db.query<{ n: string | number; s: string | null }>(`SELECT count(*) AS n, sum(amount) AS s FROM lock WHERE ${w}`, args),
+  ]);
+  return { rows, total: Number(cnt[0]?.n ?? 0), totalAmount: String(cnt[0]?.s ?? "0") };
+}

@@ -5,7 +5,7 @@
 ![Lockwatch](docs/screenshots/home.png)
 
 ## Why
-On Oct 5 2026 an attacker drained expired-but-unclaimed veBTC locks on Mezo. Expired BTC just sits in the lock until the owner remembers to claim it — and nothing watches for that. On testnet today, **286 of 302 live locks are expired and unclaimed**.
+Every veBTC lock on Mezo ends on a Thursday, and holders forget. An ended lock stops earning and voting, and its BTC just sits there until the owner remembers to claim it. Lockwatch watches for that and keeps the BTC working: alerts, auto-claim, re-lock or MUSD. On testnet today, **286 of 302 live locks are expired and unclaimed**.
 
 ## What it does
 | | |

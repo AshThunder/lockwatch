@@ -15,7 +15,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={qc}>
-        <RainbowKitProvider initialChain={CHAIN_ID === 31612 ? mezoMainnet : mezoTestnet} modalSize="wide" appInfo={{ appName: "Lockwatch" }} theme={darkTheme({ accentColor: "#F7931A", accentColorForeground: "#0D0C0A", borderRadius: "small", fontStack: "system", overlayBlur: "small" })}>
+        <RainbowKitProvider initialChain={CHAIN_ID === 31612 ? mezoMainnet : mezoTestnet} modalSize="wide" appInfo={{ appName: "Lockwatch" }} theme={darkTheme({ accentColor: "#F7931A", accentColorForeground: "#1A0F02", borderRadius: "small", fontStack: "system", overlayBlur: "small" })}>
           <PassportProvider environment={CHAIN_ID === 31612 ? "mainnet" : "testnet"}>{children}</PassportProvider>
         </RainbowKitProvider>
       </QueryClientProvider>

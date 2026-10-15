@@ -3,37 +3,58 @@
 @tailwind utilities;
 
 @layer base {
-  :root { color-scheme: dark; accent-color: #F7931A; }
-  html { scrollbar-color: #3A362F #0D0C0A; -webkit-tap-highlight-color: transparent; }
-  body { @apply bg-base font-sans text-paper antialiased; font-feature-settings: "ss01", "cv11"; }
-  ::selection { background: #F7931A; color: #0D0C0A; }
+  :root { color-scheme: dark; accent-color: #F7931A; caret-color: #F7931A; }
+  html { scrollbar-color: #2C3238 #0E1012; scrollbar-width: thin; -webkit-tap-highlight-color: transparent; scroll-padding-top: 5rem; }
+  body { @apply bg-ground font-sans text-[0.9375rem] text-paper antialiased; }
+  ::selection { background: #F7931A; color: #1A0F02; }
   h1, h2, h3 { @apply font-display; text-wrap: balance; }
   p { text-wrap: pretty; }
-  :focus-visible { outline: 2px solid #F7931A; outline-offset: 3px; border-radius: 4px; }
+  :focus-visible { outline: 2px solid #F7931A; outline-offset: 2px; border-radius: 3px; }
   a { text-underline-offset: 3px; text-decoration-thickness: 1px; }
-  input::placeholder { color: #6F695E; }
+  input::placeholder { color: #82888C; }
   input[type="range"] { @apply w-full; height: 28px; touch-action: pan-y; }
-  table { font-variant-numeric: tabular-nums; }
+  table, .tnum { font-variant-numeric: tabular-nums; }
+  dialog::backdrop { background: rgba(6, 7, 8, 0.72); }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 }
 
 @layer components {
-  /* Surfaces: hairline-ruled panels, square-ish corners, no glow. */
+  /* Board surfaces: rows and ruled panels, never floating cards. */
   .panel { @apply rounded-md border border-line bg-panel; }
-  .card { @apply panel p-5; } /* kept for compatibility */
   .rule { @apply border-t border-line; }
 
-  .btn { @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[5px] px-4 text-sm font-semibold transition-[background-color,color,border-color,transform] duration-150 ease-out active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40 disabled:active:translate-y-0; }
-  .btn-primary { @apply btn bg-btc text-base hover:bg-[#FFA43A]; }
-  .btn-ghost { @apply btn border border-line text-paper hover:border-faint hover:bg-raised; }
-  .btn-sm { @apply min-h-[36px] px-3 text-xs; }
+  /* A flap tile: the board's one material. Hairline split across the middle. */
+  .flap { @apply relative inline-grid place-items-center overflow-hidden rounded-[3px] bg-flap font-mono font-medium text-paper shadow-flap; perspective: 300px; }
+  .flap::after { content: ""; @apply pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-ground/90; }
+  .flap > span { display: block; transform-origin: 50% 50%; backface-visibility: hidden; }
 
-  .num { @apply font-mono tabular-nums; font-feature-settings: "zero" 0; }
-  .label { @apply text-2xs font-medium uppercase tracking-[0.08em] text-mute; }
-  .pill { @apply inline-flex items-center gap-1.5 rounded-[3px] px-1.5 py-0.5 font-mono text-2xs uppercase tracking-[0.06em]; }
-  .link { @apply text-paper underline decoration-faint hover:decoration-btc hover:text-btc; }
+  .btn { @apply inline-flex min-h-[44px] select-none items-center justify-center gap-2 whitespace-nowrap rounded-[4px] px-4 text-sm font-semibold transition-[background-color,color,border-color,box-shadow] duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-40; }
+  .btn-primary { @apply btn bg-btc text-btc-ink hover:bg-btc-hi active:bg-btc; }
+  .btn-ghost { @apply btn border border-line bg-transparent text-paper hover:border-faint hover:bg-raised; }
+  .btn-quiet { @apply btn px-3 text-mute hover:bg-raised hover:text-paper; }
+  .btn-sm { @apply min-h-[36px] px-3 text-[0.8125rem]; }
 
-  .skeleton { @apply rounded-[3px]; background: linear-gradient(90deg, #1C1A16 25%, #26231E 50%, #1C1A16 75%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
-  @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+  .num { @apply font-mono tabular-nums; }
+  .label { @apply text-[0.75rem] font-medium text-mute; }
+  .board-label { @apply font-display text-[0.8125rem] font-semibold uppercase tracking-[0.12em] text-faint; }
+  .pill { @apply inline-flex items-center gap-1.5 rounded-[3px] px-1.5 py-0.5 font-display text-[0.75rem] font-semibold uppercase tracking-[0.08em]; }
+  .link { @apply text-paper underline decoration-faint hover:text-btc hover:decoration-btc; }
 
-  .field { @apply min-h-[44px] w-full rounded-[5px] border border-line bg-base px-3 text-sm text-paper outline-none transition-colors focus:border-btc; }
+  .skeleton { @apply rounded-[3px]; background: linear-gradient(90deg, #1B1F23 25%, #252A30 50%, #1B1F23 75%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
+  @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } .animate-lamp { animation: none; } }
+
+  .field { @apply min-h-[44px] w-full rounded-[4px] border border-line bg-ground px-3 text-sm text-paper outline-none transition-colors hover:border-faint focus:border-btc; }
+
+  .tbl { @apply w-full text-sm; }
+  .tbl :where(th) { @apply h-10 whitespace-nowrap border-b border-line px-3 text-left text-[0.75rem] font-medium text-mute first:pl-0 last:pr-0; }
+  .tbl :where(td) { @apply h-12 border-b border-hair px-3 align-middle first:pl-0 last:pr-0; }
+  .tbl tbody tr { @apply transition-colors hover:bg-panel; }
+}
+
+@layer utilities {
+  .toast-in { animation: toast-in 260ms cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+  dialog[open] { animation: dlg-in 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes dlg-in { from { opacity: 0; transform: translateY(6px) scale(0.985); } }
+  @media (prefers-reduced-motion: reduce) { .toast-in, dialog[open] { animation-duration: 1ms; } }
 }
