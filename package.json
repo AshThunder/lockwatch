@@ -1,0 +1,13 @@
+{
+  "name": "lockwatch",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:contracts": "cd contracts && forge test --no-match-path 'test/fork/*'",
+    "test:fork": "cd contracts && FOUNDRY_PROFILE=fork forge test --match-path 'test/fork/*' --fork-url https://rpc.test.mezo.org",
+    "typecheck": "pnpm -r typecheck",
+    "abi": "node scripts/export-abi.mjs"
+  }
+}
