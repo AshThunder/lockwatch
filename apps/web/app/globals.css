@@ -1,0 +1,13 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { @apply bg-base text-zinc-100 font-sans antialiased; }
+.card { @apply rounded-2xl border border-line bg-panel p-5; }
+.btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed; }
+.btn-primary { @apply btn bg-btc text-black hover:brightness-110; }
+.btn-ghost { @apply btn border border-line hover:bg-white/5; }
+.num { @apply font-mono tabular-nums; }
+.pill { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium; }
+.glow { box-shadow: 0 0 80px -20px rgba(247,147,26,.45); }
