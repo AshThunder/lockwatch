@@ -83,7 +83,7 @@ export default function Watch() {
       {!ready ? <Skeleton className="mt-4 h-32 w-full" />
         : !list.length ? <div className="mt-4"><State title="Nothing watched yet">Paste any Mezo address above. Nothing is signed and nothing is approved; watching is read-only.</State></div>
         : (
-          <div className="mt-3 overflow-x-auto rounded-md border border-line">
+          <div className="relative mt-3 overflow-x-auto rounded-md border border-line">
             <table className="tbl w-full min-w-[42rem]">
               <thead><tr><th scope="col">Wallet</th><th scope="col" className="text-right">Locked</th><th scope="col">Next unlock</th><th scope="col">Covered</th><th scope="col">Loan</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>

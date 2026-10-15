@@ -48,7 +48,7 @@ export default function Keeper() {
             </div>
           </div>
           {!d.items.length ? <div className="mt-3"><State title="Nothing here yet">Actions appear the moment the keeper takes one.</State></div> : (
-            <div className="mt-3 overflow-x-auto rounded-md border border-line">
+            <div className="relative mt-3 overflow-x-auto rounded-md border border-line">
               <table className="tbl w-full min-w-[36rem]">
                 <thead><tr><th scope="col">When</th><th scope="col">Job</th><th scope="col">For</th><th scope="col">Result</th><th scope="col">Transaction</th></tr></thead>
                 <tbody>{d.items.map((r, i) => (

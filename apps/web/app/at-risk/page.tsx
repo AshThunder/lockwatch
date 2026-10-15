@@ -121,7 +121,7 @@ export default function Explorer() {
 
         {list.isError ? <State tone="error" title="Couldn't load locks" action={<button className="btn-ghost" onClick={() => list.refetch()}>Try again</button>}>{(list.error as Error).message}</State> : (
           <div className={`transition-opacity ${list.isPlaceholderData ? "opacity-60" : ""}`}>
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="tbl min-w-[40rem]">
                 <caption className="sr-only">Locks, sortable</caption>
                 <thead><tr>{th("id", "Lock")}<th>Owner</th>{th("amount", "BTC", true)}{th("end", state === "expired" ? "Ended" : "Departs", true)}<th className="text-right">Status</th></tr></thead>

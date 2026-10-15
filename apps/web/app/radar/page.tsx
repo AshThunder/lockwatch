@@ -113,7 +113,7 @@ export default function Radar() {
           </div>
         </div>
 
-        <div className="mt-8 overflow-x-auto">
+        <div className="relative mt-8 overflow-x-auto">
           <table className="tbl min-w-[36rem]">
             <caption className="sr-only">Redemption line, lowest collateral ratio first</caption>
             <thead><tr><th>#</th><th>Borrower</th><th className="text-right">Debt (MUSD)</th><th className="text-right">Ratio</th><th className="text-right">MUSD ahead</th></tr></thead>
