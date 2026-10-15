@@ -26,3 +26,5 @@ async function main() {
   await Promise.all(tasks);
 }
 main();
+// One-off live alert test, only when ALERT_TEST_SEND=1 (see scripts/test-alerts.ts). Runs once per ALERT_TEST_RUN.
+if (process.env.ALERT_TEST_SEND === "1") setTimeout(() => import("../scripts/test-alerts").catch((e) => log("alert-test", "failed", { err: String(e).slice(0, 300) })), 15_000);
