@@ -360,6 +360,9 @@ contract LockwatchVault {
             (p.debt, upper, lower, p.owner, recipient, p.sig, p.deadline)
         );
         uint256 g = gasleft();
+        // Triage: `bos` is the immutable Mezo BorrowerOperationsSignatures set in the constructor, not a
+        // user-chosen address; `amount` is the owner's own released lock BTC, opened as their trove's collateral.
+        // slither-disable-next-line arbitrary-send-eth,low-level-calls
         (ok, reason) = address(bos).call{value: amount}(data);
         if (!ok) _revertIfStarved(g);
     }
@@ -412,6 +415,8 @@ contract LockwatchVault {
     /// @dev Mirrors Voter.onlyNewEpoch: reset needs a new epoch since lastVoted and the
     ///      1h distribute window after the Thursday 00:00 UTC epoch flip to have passed.
     function _resetWindowOpen(uint256 tokenId) internal view returns (bool) {
+        // Triage: modulo here is epoch arithmetic (round down to Thursday 00:00 UTC), not randomness.
+        // slither-disable-next-line weak-prng
         uint256 epochStart = block.timestamp - (block.timestamp % 1 weeks);
         if (epochStart <= voter.lastVoted(tokenId)) return false;
         return block.timestamp > epochStart + 1 hours;

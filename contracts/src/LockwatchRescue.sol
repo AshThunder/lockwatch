@@ -138,36 +138,61 @@ contract LockwatchRescue {
         if (troveManager.getTroveStatus(borrower) != TROVE_ACTIVE) revert TroveNotActive();
         uint256 icr = troveManager.getCurrentICR(borrower, priceFeed.fetchPrice());
         if (icr >= trig) revert NotTriggered(icr);
-        uint256 added = _add(s, borrower, upperHint, lowerHint);
-        uint256 repaid = _repay(s, borrower, upperHint, lowerHint);
-        if (added == 0 && repaid == 0) revert NothingToDo();
+
+        // Checks-effects-interactions: consume every permission and settle all accounting
+        // (including deleting a fully spent rule) BEFORE any value-moving call to BorrowerOperations.
+        Exec memory x;
+        x.deadline = s.deadline;
+        (x.added, x.addSig) = _takeAdd(s, borrower);
+        (x.repaid, x.repaySig) = _takeRepay(s, borrower);
+        if (x.added == 0 && x.repaid == 0) revert NothingToDo();
         if (s.addAmount == 0 && s.repayAmount == 0) delete _rules[borrower];
-        emit Rescued(borrower, msg.sender, icr, added, repaid);
+        emit Rescued(borrower, msg.sender, icr, x.added, x.repaid);
+        _execute(x, borrower, upperHint, lowerHint);
     }
 
-    function _add(Rule storage s, address borrower, address upper, address lower) internal returns (uint256 added) {
+    struct Exec {
+        uint256 added;
+        uint256 repaid;
+        uint256 deadline;
+        bytes addSig;
+        bytes repaySig;
+    }
+
+    /// @dev Effects only: debits the borrower's BTC escrow and burns the one-shot AddColl permission.
+    function _takeAdd(Rule storage s, address borrower) internal returns (uint256 added, bytes memory sig) {
         added = s.addAmount;
-        if (added == 0 || btcOf[borrower] < added) return 0;
-        bytes memory sig = s.addSig;
+        if (added == 0 || btcOf[borrower] < added) return (0, sig);
+        sig = s.addSig;
         btcOf[borrower] -= added;
         totalBtc -= added;
         s.addAmount = 0;
         delete s.addSig;
-        bos.addCollWithSignature{value: added}(upper, lower, borrower, sig, s.deadline);
     }
 
-    function _repay(Rule storage s, address borrower, address upper, address lower) internal returns (uint256 repaid) {
+    /// @dev Effects only: debits the borrower's MUSD escrow and burns the one-shot RepayMUSD permission.
+    function _takeRepay(Rule storage s, address borrower) internal returns (uint256 repaid, bytes memory sig) {
         repaid = s.repayAmount;
-        if (repaid == 0 || musdOf[borrower] < repaid) return 0;
-        bytes memory sig = s.repaySig;
+        if (repaid == 0 || musdOf[borrower] < repaid) return (0, sig);
+        sig = s.repaySig;
         musdOf[borrower] -= repaid;
         totalMusd -= repaid;
         s.repayAmount = 0;
         delete s.repaySig;
-        uint256 m0 = musd.balanceOf(address(this));
-        bos.repayMUSDWithSignature(repaid, upper, lower, borrower, sig, s.deadline);
-        // MUSD burns exactly `repaid` from this contract (the caller); anything else is a protocol breach.
-        if (m0 - musd.balanceOf(address(this)) != repaid) revert TransferFailed();
+    }
+
+    /// @dev Interactions only, after all state is final.
+    function _execute(Exec memory x, address borrower, address upper, address lower) internal {
+        if (x.added != 0) bos.addCollWithSignature{value: x.added}(upper, lower, borrower, x.addSig, x.deadline);
+        if (x.repaid != 0) {
+            uint256 m0 = musd.balanceOf(address(this));
+            bos.repayMUSDWithSignature(x.repaid, upper, lower, borrower, x.repaySig, x.deadline);
+            // MUSD burns exactly `repaid` from this contract (the caller); anything else is a protocol breach.
+            // Triage: the before/after delta IS the safety check; rescue() is nonReentrant and all state is
+            // already final, so a reentrant balance change can only make this revert, never pass wrongly.
+            // slither-disable-next-line reentrancy-balance
+            if (m0 - musd.balanceOf(address(this)) != x.repaid) revert TransferFailed();
+        }
     }
 
     /// @notice BTC enters only via depositBtc (payable). Plain transfers are refused.
