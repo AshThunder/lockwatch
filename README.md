@@ -1,75 +1,139 @@
 <p align="center"><img src="apps/web/public/favicon.svg" width="72" /></p>
 <h1 align="center">Lockwatch</h1>
-<p align="center"><b>Never let your Bitcoin sit unwatched on Mezo.</b><br/>Expiry alerts + auto-protect for veBTC locks, and borrower-side Redemption Radar for MUSD loans.</p>
+<p align="center"><b>NEVER MISS AN UNLOCK.<br/>NEVER LEAVE BTC IDLE.</b></p>
+<p align="center">Expiry protection for veBTC locks on Mezo: alerts before a lock ends, a keeper that acts the moment it does, and a Redemption Radar for MUSD borrowers.</p>
+<p align="center"><a href="https://lockwatch.vercel.app"><b>Live demo: lockwatch.vercel.app</b></a> · Telegram: <a href="https://t.me/Lockwatch_bot">@Lockwatch_bot</a> · Mezo testnet (chain 31611)</p>
 
-![Lockwatch](docs/screenshots/home.png)
+![Lockwatch home](docs/screenshots/home-desktop.png)
 
-## Why
-Every veBTC lock on Mezo ends on a Thursday, and holders forget. An ended lock stops earning and voting, and its BTC just sits there until the owner remembers to claim it. Lockwatch watches for that and keeps the BTC working: alerts, auto-claim, re-lock or MUSD. On testnet today, **286 of 302 live locks are expired and unclaimed**.
+## The problem
+Every veBTC lock on Mezo ends on a Thursday at 00:00 UTC, and holders forget. An ended lock stops earning and stops voting, and its BTC sits idle until the owner remembers to come back and claim it.
 
-## What it does
+The evidence is onchain. We scanned every veBTC id on Mezo testnet (1–379, Oct 15 2026): **286 locks were expired and unclaimed, holding 873.58 testnet BTC**, effectively the whole veBTC supply. Nobody is watching those positions. Expired positions are also the ones attackers look for: an Oct 5, 2026 incident on Mezo involved expired locks.
+
+Borrowers have a matching blind spot. MUSD redemptions hit the lowest-collateral troves first, and a borrower can't easily see where they are in that line.
+
+## What Lockwatch does
+| Feature | What it does |
+|---|---|
+| ⏳ **Expiry Guard + auto-protect** | Watch every lock you own with a live countdown. Approve one lock and pick an outcome. At expiry a permissionless keeper resets votes and withdraws, then **returns the BTC to you, re-locks it in your name, or opens an MUSD loan in your name**. If anything fails, the BTC goes back to you. The vault never holds BTC after a transaction. |
+| 🔁 **Auto-extend** | Keep a lock alive forever: when it gets within your chosen window of expiry, the keeper extends it by your chosen duration. |
+| 🎁 **Reward auto-claim** | The keeper claims voting rewards for opted-in locks and sends them to the owner. |
+| 🛟 **Loan rescue** | Set a collateral-ratio line on your MUSD trove with a signed rule. If it drops below, the keeper tops up collateral and/or repays from your pre-approved amounts. |
+| 📡 **Redemption Radar** | Borrower-side: your place in the MUSD redemption queue, MUSD ahead of you, "what if X MUSD is redeemed", and the top-up or repayment that moves you back. |
+| 🗺 **BTC-at-risk explorer** | Every expired, unclaimed lock on Mezo, by size and age. |
+| 📅 **Calendar export** | A personal iCal feed with every unlock date, so it lands in your own calendar. |
+| 👀 **Watchlist** | Follow any lock or wallet without owning it. |
+| 👛 **Multi-wallet portfolio** | Link several wallets with a SIWE signature and see every lock in one view. |
+| 🤖 **Keeper page** | Public keeper status: every run, every transaction, success rate and remaining gas. |
+| 🔔 **Telegram + email alerts** | 7 days, 1 day, at expiry, and when protection succeeds or fails. |
+
 | | |
 |---|---|
-| ⏳ **Watch** | Every veBTC lock you own, with a live countdown, votes and protection status |
-| 🛡 **Auto-protect** | Approve one lock, pick an outcome. At expiry a permissionless keeper clears votes, withdraws, and **returns the BTC to you, re-locks it in your name, or opens an MUSD loan in your name** (→ sMUSD savings on mainnet). Anything fails → BTC back to you |
-| 🔔 **Alerts** | Telegram + email at 7 days, 1 day, expiry, protect done/failed |
-| 🗺 **BTC-at-risk map** | Every expired, unclaimed lock on Mezo by size and age |
-| 📡 **Redemption Radar** | *Borrower-side*: your place in the MUSD redemption line, MUSD ahead of you, "what if X MUSD is redeemed", and the collateral/repay that moves you back — with alerts before you're hit. (TrovePilot serves redeemers; Radar protects borrowers.) |
+| ![Dashboard](docs/screenshots/dashboard-desktop.png) | ![Autopilot](docs/screenshots/autopilot-desktop.png) |
+| ![Radar](docs/screenshots/radar-desktop.png) | ![Keeper](docs/screenshots/keeper-desktop.png) |
+| ![Portfolio](docs/screenshots/portfolio-desktop.png) | ![Mobile](docs/screenshots/nav-sheet.png) |
 
+More in [docs/screenshots](docs/screenshots).
+
+## Architecture
 ```mermaid
 flowchart LR
-  U[Wallet / Passport] -->|approve id, register, EIP-712 sig| V[LockwatchVault]
-  U --> W[Next.js app + API · Vercel]
-  W --> DB[(Postgres)]
-  S[Railway worker: indexer · radar · alerts · keeper] --> DB
-  S -->|protectBatch| V
-  V -->|reset| VOT[Voter]
-  V -->|withdraw / createLockFor| VE[veBTC]
-  V -->|openTroveWithSignature| BOS[MUSD BorrowerOperationsSignatures]
-  S --> TG[Telegram]
-  S --> EM[Email · Resend]
+  subgraph Mezo["Mezo testnet (31611)"]
+    VE[veBTC]
+    VOTER[Voter / Rewards]
+    MUSD[MUSD BorrowerOperations]
+    VAULT[LockwatchVault v2]
+    RESCUE[LockwatchRescue]
+    VAULT -- withdraw / re-lock / extend / claim --> VE
+    VAULT -- reset votes --> VOTER
+    VAULT -- open loan for owner --> MUSD
+    RESCUE -- top up / repay --> MUSD
+  end
+  subgraph Railway
+    IDX[Indexer]
+    KEEP[Keeper]
+    ALERT[Alerts: Telegram + Resend email]
+    PG[(Postgres)]
+    IDX --> PG
+    KEEP --> PG
+    ALERT --> PG
+  end
+  subgraph Vercel
+    APP["Next.js 14 app + API routes<br/>RainbowKit / Mezo Passport, SIWE"]
+  end
+  IDX -- reads events --> VE
+  KEEP -- permissionless txs --> VAULT
+  KEEP --> RESCUE
+  APP -- reads --> PG
+  APP -- user txs via wallet --> VAULT
+  APP --> RESCUE
+  ALERT --> TG[Telegram @Lockwatch_bot]
 ```
 
-## Safety
-No owner, no admin, no upgrade, no withdraw function, no forwarder trust. Funds can only reach the lock owner. See [SECURITY.md](SECURITY.md) — every guarantee is a test, including a gas-griefing regression test.
+- **contracts/**: Foundry, solc 0.8.28. `LockwatchVault` (auto-protect, auto-extend, reward claim) and `LockwatchRescue` (signed loan-rescue rules). No admin withdraw path, no trusted forwarder: every call checks the real sender.
+- **services/**: one Railway worker running the indexer, keeper and alert sender against Postgres.
+- **apps/web/**: Next.js 14 app and API routes on Vercel.
+- **packages/**: shared SDK (ABIs, addresses, typed data) and the DB layer.
 
-| Screens | |
+## Contracts (Mezo testnet, verified)
+| Contract | Address |
 |---|---|
-| ![](docs/screenshots/at-risk.png) | ![](docs/screenshots/radar-borrower.png) |
-| ![](docs/screenshots/protect.png) | ![](docs/screenshots/m-home.png) |
+| LockwatchVault v2 | [0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB](https://explorer.test.mezo.org/address/0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB) |
+| LockwatchRescue | [0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e](https://explorer.test.mezo.org/address/0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e) |
+| LockwatchVault v1 (still serves lock #380) | [0xD7160697f3ACd0191e65bcccaAFeaa0913D21999](https://explorer.test.mezo.org/address/0xD7160697f3ACd0191e65bcccaAFeaa0913D21999) |
+| veBTC (Mezo) | [0xB63fcCd03521Cf21907627bd7fA465C129479231](https://explorer.test.mezo.org/address/0xB63fcCd03521Cf21907627bd7fA465C129479231) |
 
-## Repo
-```
-contracts/   Foundry · LockwatchVault.sol (solc 0.8.28, evm london) · unit/fuzz/invariant/fork tests
-packages/sdk viem chains, addresses, ABIs, epoch math, radar math, EIP-712 builders
-packages/db  Postgres / PGlite schema + queries
-services/    Railway worker: indexer, keeper, radar, alerts, Telegram bot (Dockerfile, railway.json)
-apps/web     Next.js 14 · React 18 · Mezo Passport · Tailwind · Recharts
-docs/        OPEN-QUESTIONS.md, DEMO.md, screenshots, ci.yml (move to .github/workflows/ — push token lacked `workflow` scope)
+## Proof: real testnet transactions
+| Step | Transaction |
+|---|---|
+| **Keeper auto-extended lock #381 on its own (unlock moved Oct 22 → Nov 19)** | [0x4515f54e…acbe7b](https://explorer.test.mezo.org/tx/0x4515f54e3876b980c083b938f062e2db9839fd1b16480a43571bcddddeacbe7b) |
+| Create lock #381 | [0xd11b9fc6…fbffc1](https://explorer.test.mezo.org/tx/0xd11b9fc6f58187eb814c5c2aac6bc53951b063710807ac3b7b2e1edbd7fbffc1) |
+| Approve lock #381 to the vault | [0x74461bea…fb317](https://explorer.test.mezo.org/tx/0x74461bea1fc2be01adaa5e1a28d893b1c6dd2214dded9edc7482c713120fb317) |
+| Set auto-extend policy | [0x67807143…ec403](https://explorer.test.mezo.org/tx/0x67807143d05346fb8e7a9bc97e38ecd7d9794222c6e2b4e87a8a3f78669ec403) |
+| Turn on reward auto-claim (#381) | [0xe3794b80…c5802](https://explorer.test.mezo.org/tx/0xe3794b80ab0a5a2ecb733eecffdb650230090b436328d75fe16fda2f6c1c5802) |
+| Approve vault v2 for the e2e wallet | [0x1694c457…ee4d4](https://explorer.test.mezo.org/tx/0x1694c457c4bc091c4e5874ba931bca198f68cce1d64af3645e7d4e66829ee4d4) |
+| Turn on reward auto-claim (#380) | [0xf50d41d8…e9bcb](https://explorer.test.mezo.org/tx/0xf50d41d89b07cc51a97c944dcd8a9c2f1c17ef6b6e3f30e372939698e96e9bcb) |
+
+Also verified live on lockwatch.vercel.app with real wallet signatures: calendar feed, watchlist, multi-wallet linking (a replayed signature is rejected), settings readback, and Telegram + email alert delivery.
+
+## Testing
+| Suite | Tests |
+|---|---|
+| Contracts (Foundry: unit, fuzz, invariant, gas-griefing) | 65 |
+| Contracts, fork tests against live Mezo testnet | 10 |
+| Services (indexer, keeper, alerts) | 26 |
+| Web (API routes, UI, mobile nav, gas padding) | 37 |
+| SDK | 24 |
+| DB | 12 |
+| **Total** | **174, all passing** |
+
+Plus `services/scripts/fork-e2e.ts` (full keeper flow on a fork of testnet) and `services/scripts/live-e2e.ts` (real transactions above).
+
+```bash
+pnpm test                 # all TS suites
+pnpm test:contracts       # Foundry
+pnpm test:fork            # Foundry against https://rpc.test.mezo.org
 ```
 
-## Run
+## Quickstart
 ```bash
 pnpm install
-pnpm test:contracts                 # 35 tests: unit, fuzz, invariant, gas-griefing
-pnpm test:fork                      # 5 tests against real Mezo testnet contracts
-pnpm test                           # sdk, db, services, web
-cd services && DATABASE_URL=../.data/pglite pnpm scan   # read-only scan of testnet into local DB
-cd apps/web && DATABASE_URL=../../.data/pglite pnpm build && pnpm start
+cp .env.example .env
+pnpm --filter @lockwatch/web dev          # app on :3000
+pnpm --filter ./services start            # indexer + keeper + alerts
 ```
-Deploy: `forge script contracts/script/Deploy.s.sol --rpc-url mezo_testnet --broadcast`, then set `LOCKWATCH_VAULT` / `NEXT_PUBLIC_LOCKWATCH_VAULT` (see `.env.example`).
+Requires Node 20+, pnpm, Postgres, and Foundry for contracts.
 
-## Deployments
+### Environment variables (names only)
+- **Web:** `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_LOCKWATCH_VAULT`, `NEXT_PUBLIC_LOCKWATCH_RESCUE`, `NEXT_PUBLIC_KEEPER_ADDRESS`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, `NEXT_PUBLIC_TELEGRAM_BOT`, `DATABASE_URL`, `SIWE_DOMAIN`, `APP_URL`, `KEEPER_BALANCE_RPC`, `TYPICAL_REDEMPTION_MUSD`
+- **Worker:** `DATABASE_URL`, `RPC_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_MODE`, `TELEGRAM_WEBHOOK_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL`, `PORT`, `KEEPER_PRIVATE_KEY`
 
-| Network | LockwatchVault |
-|---|---|
-| Mezo testnet (31611), vault v2 | [`0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB`](https://explorer.test.mezo.org/address/0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB) |
-| Mezo testnet (31611), loan rescue | [`0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e`](https://explorer.test.mezo.org/address/0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e) |
-| Mezo testnet (31611), vault v1 (still served by the keeper) | [`0xD7160697f3ACd0191e65bcccaAFeaa0913D21999`](https://explorer.test.mezo.org/address/0xD7160697f3ACd0191e65bcccaAFeaa0913D21999) (source verified) |
+## Honest limitations
+- **Loan rescue triggers on collateral ratio only.** It does not yet react to redemption-queue position; the Radar shows that, but rescue doesn't act on it.
+- **No sMUSD savings vault on testnet.** The "MUSD → savings" outcome is mainnet-only; on testnet the MUSD outcome stops at opening the loan.
+- **One vault approval per lock.** veBTC allows one approved address per lock, so approving a lock for Vault v2 replaces its approval for the old vault (lock #380 stays on v1 for that reason).
+- Loan rescue and a live expiry withdrawal are proven in fork tests; the live run didn't trigger them because no test trove fell below its line and no lock had yet expired.
 
-Wallet connection uses the standard RainbowKit modal with Mezo Passport's Bitcoin wallets (Unisat, OKX, Xverse) as an extra group. Set `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` to enable WalletConnect-based wallets; without it, browser/extension wallets still work.
-
-## Testnet addresses
-veBTC `0xB63f…9231` · Voter `0x72F8…5738` · BorrowerOperationsSignatures `0xD757…639e` · sMUSD (mainnet) `0xb4D4…51CC` — full list in `packages/sdk/src/addresses.ts`.
-
+## License
 Apache-2.0
