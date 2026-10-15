@@ -85,7 +85,7 @@ describe("rescue helpers", () => {
     for (const kind of ["AddColl", "RepayMUSD"] as const) {
       const td = rescueTypedData(kind, { chainId: 31611, bos, amount: 10n ** 16n, borrower: acct.address, nonce: 3n, deadline: BigInt(THU) });
       const sig = await acct.signTypedData(td as never);
-      expect(await recoverTypedDataAddress({ ...(td as never), signature: sig })).toBe(acct.address);
+      expect(await recoverTypedDataAddress({ ...(td as object), signature: sig } as never)).toBe(acct.address);
       expect(hashTypedData(td as never)).toMatch(/^0x[0-9a-f]{64}$/);
     }
     const a = rescueTypedData("AddColl", { chainId: 31611, bos, amount: 1n, borrower: acct.address, nonce: 0n, deadline: 1n });

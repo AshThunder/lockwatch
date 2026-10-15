@@ -56,11 +56,11 @@ function Hero({ risk }: { risk?: AtRisk }) {
       <div className="mx-auto grid max-w-[80rem] gap-12 px-5 pb-16 pt-12 md:px-8 md:pb-24 md:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.02fr)] lg:items-center lg:gap-14">
         <div>
           <h1 data-h1 className="font-display text-[3rem] font-extrabold uppercase leading-[0.88] sm:text-[4.25rem] lg:text-[4.6rem] xl:text-[5.4rem]">
-            <span className="block">Every <span className="normal-case">ve</span>BTC lock</span> <span className="block">ends on a Thursday.</span> <span className="block text-btc">Yours keeps working.</span>
+            <span className="block">Never miss</span> <span className="block">an unlock.</span> <span className="block text-btc">Never leave</span> <span className="block text-btc">BTC idle.</span>
           </h1>
           <div data-hero-sub>
             <p className="mt-7 max-w-[33rem] text-lg leading-relaxed text-mute">
-              When a lock ends, its BTC stops earning and voting, and waits until you come back to claim it. Lockwatch alerts you before that moment, then claims, re-locks or borrows MUSD against it for you, automatically.
+              Every veBTC lock ends on a Thursday. Lockwatch alerts you before yours does, keeps its voting power topped up, claims its rewards, and when it ends, claims, re-locks or borrows MUSD against it for you.
             </p>
             <div className="mt-7 max-w-[33rem]"><GlobalSearch big /></div>
             <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">

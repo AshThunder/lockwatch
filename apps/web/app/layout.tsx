@@ -7,8 +7,8 @@ const display = Big_Shoulders_Display({ subsets: ["latin"], weight: ["600", "700
 const sans = Hanken_Grotesk({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-sans", display: "swap" });
 const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono", display: "swap" });
 
-const title = "Lockwatch — keep your veBTC working, every Thursday";
-const description = "veBTC locks on Mezo end every Thursday. Lockwatch alerts you before yours does, then claims, re-locks or borrows MUSD against it automatically, so your BTC never sits idle.";
+const title = "Lockwatch — never miss an unlock. Never leave BTC idle.";
+const description = "Never miss a veBTC unlock on Mezo. Lockwatch alerts you before each Thursday expiry, auto-extends voting power, auto-claims rewards, rescues MUSD loans, and claims, re-locks or borrows against ended locks so your BTC never sits idle.";
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_URL ?? "https://lockwatch.vercel.app"),
   title: { default: title, template: "%s · Lockwatch" },

@@ -11,6 +11,7 @@ import { StatusPill, State, useNow, Countdown, ExpiryBar, PageHead, Skeleton, wh
 import { Icon } from "@/components/Icon";
 import { GlobalSearch } from "@/components/Search";
 import { useTx } from "@/components/feedback";
+import { CalendarExport, GoogleCalLink } from "@/components/Calendar";
 
 type Lock = { id: string; amount: string; end: number; permanent: boolean; voted: boolean; approvedVault: boolean; status: string; protection: { active: boolean; mode: number; tx_hash: string | null } | null };
 type Act = { items: { kind: string; lock_id: string; tx_hash: string | null; mode: number; ts: number; detail: string | null }[] };
@@ -52,7 +53,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-10">
       <PageHead title={isMine ? "My locks" : "Wallet locks"}
-        aside={<><Link href="/alerts" className="btn-ghost"><Icon name="bell" />Alerts</Link>{isMine && upcoming.some((l) => !l.protection?.active) && <Link href={`/protect/${upcoming.find((l) => !l.protection?.active)!.id}`} className="btn-primary"><Icon name="shield" />Protect next lock</Link>}</>}>
+        aside={<><CalendarExport address={who} /><Link href="/alerts" className="btn-ghost"><Icon name="bell" />Alerts</Link>{isMine && upcoming.some((l) => !l.protection?.active) && <Link href={`/protect/${upcoming.find((l) => !l.protection?.active)!.id}`} className="btn-primary"><Icon name="shield" />Protect next lock</Link>}</>}>
         {isMine ? "Everything you have locked in veBTC, when it departs, and what happens then." : <span className="inline-flex flex-wrap items-center gap-1">Viewing <span className="num text-paper">{short(who)}</span> read-only <CopyButton text={who} label="Copy address" /></span>}
       </PageHead>
 
@@ -142,6 +143,7 @@ function LockRow({ l, canAct, onDone }: { l: Lock; canAct: boolean; onDone: () =
           {!l.permanent && !expired && <span className="text-xs text-faint">{when(l.end)}</span>}
         </div>
         <div className="mt-2"><ExpiryBar end={l.end} permanent={l.permanent} /></div>
+        {!l.permanent && !expired && <GoogleCalLink id={l.id} amount={l.amount} end={l.end} voted={l.voted} mode={l.protection?.active ? MODES[l.protection.mode] : null} className="mt-1" />}
       </div>
       <div className="text-sm">
         {prot ? <span className="inline-flex items-center gap-1.5"><Icon name="shield" className="h-4 w-4 text-btc" />{MODES[l.protection!.mode]}{l.voted && <span className="text-faint">· clears votes</span>}</span>

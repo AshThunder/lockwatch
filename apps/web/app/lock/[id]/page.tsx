@@ -1,4 +1,5 @@
 "use client";
+import { GoogleCalLink } from "@/components/Calendar";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
@@ -45,7 +46,7 @@ export default function LockPage({ params }: { params: { id: string } }) {
           <div className="mt-6 board-label">{!l ? "" : l.permanent ? "Permanent lock" : l.withdrawn ? "Claimed" : ended ? "Departed" : "Departs in"}</div>
           {l && !l.permanent && !l.withdrawn && (ended
             ? <p className="mt-2 text-sm text-bad">Ended {when(l.end)}, {Math.floor((now - l.end) / 86400)} days ago. {p?.active ? "The keeper will claim it on its next run." : "The BTC is idle until it is claimed."}</p>
-            : <div className="mt-3"><FlapCountdown to={l.end} size="text-[1.8rem] md:text-[2.3rem]" /><div className="mt-4 max-w-md"><ExpiryBar end={l.end} /></div><div className="mt-2 text-xs text-faint">{when(l.end)} your time · Thu 00:00 UTC</div></div>)}
+            : <div className="mt-3"><FlapCountdown to={l.end} size="text-[1.8rem] md:text-[2.3rem]" /><div className="mt-4 max-w-md"><ExpiryBar end={l.end} /></div><div className="mt-2 flex flex-wrap items-center gap-x-4 text-xs text-faint"><span>{when(l.end)} your time · Thu 00:00 UTC</span><GoogleCalLink id={l.id} amount={l.amount} end={l.end} voted={l.voted} mode={p?.active ? MODES[p.mode] : null} /><Link href="/autopilot" className="inline-flex min-h-[32px] items-center gap-1.5 text-mute hover:text-paper"><Icon name="pilot" className="h-3.5 w-3.5" />Autopilot</Link></div></div>)}
         </div>
         <dl className="divide-y divide-line text-sm">
           {[

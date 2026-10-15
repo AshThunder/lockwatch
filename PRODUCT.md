@@ -20,7 +20,7 @@ Lockwatch watches every veBTC lock and MUSD loan on Mezo. It alerts owners (Tele
 The only product on Mezo that acts at the moment a veBTC lock ends. The vault has no admin, no upgrade path, no withdraw function and no trusted-forwarder path, and can only send funds, new locks or loans to the lock owner. Redemption Radar is borrower-side, unlike TrovePilot, which serves redeemers. No gauge-vote optimizer (Matchbox owns that).
 
 ## Proof and facts (live testnet)
-- LockwatchVault `0xD7160697f3ACd0191e65bcccaAFeaa0913D21999` on Mezo testnet (31611), source verified.
+- LockwatchVault v2 `0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB` (end-of-lock plans, auto-extend, reward auto-claim) and LockwatchRescue `0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e` on Mezo testnet (31611). The v1 vault `0xD7160697f3ACd0191e65bcccaAFeaa0913D21999` (source verified) stays served for existing plans.
 - ~286 of ~380 indexed locks expired and unclaimed, ~873.6 BTC; one outlier lock (#100) holds ~868 BTC unclaimed for ~350 days. Always show the outlier separately.
 - Keeper runs every 5 min, every 30 s around Thursday. Voted locks can only be cleared from 01:00 UTC (02:00 WAT).
 - Tests: Foundry unit/fuzz/invariant/gas-griefing plus fork tests against real testnet contracts.

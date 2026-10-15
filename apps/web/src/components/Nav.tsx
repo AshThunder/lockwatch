@@ -9,12 +9,18 @@ import { Icon } from "./Icon";
 import { GlobalSearch } from "./Search";
 
 export const APP_LINKS = [
-  { href: "/dashboard", label: "My locks", icon: "board" },
-  { href: "/at-risk", label: "Lock explorer", icon: "map" },
-  { href: "/radar", label: "Redemption Radar", icon: "radar" },
-  { href: "/activity", label: "Keeper activity", icon: "activity" },
-  { href: "/alerts", label: "Alerts", icon: "bell" },
+  { href: "/dashboard", label: "My locks", icon: "board", m: "Locks" },
+  { href: "/portfolio", label: "Portfolio", icon: "layers", m: "Portfolio" },
+  { href: "/autopilot", label: "Autopilot", icon: "pilot", m: "Autopilot" },
+  { href: "/watch", label: "Watchlist", icon: "eye", m: "Watch" },
+  { href: "/at-risk", label: "Lock explorer", icon: "map", m: "Explorer" },
+  { href: "/radar", label: "Redemption Radar", icon: "radar", m: "Radar" },
+  { href: "/rescue", label: "Loan rescue", icon: "rescue", m: "Rescue" },
+  { href: "/keeper", label: "Keeper", icon: "pulse", m: "Keeper" },
+  { href: "/activity", label: "Activity", icon: "activity", m: "Activity" },
+  { href: "/alerts", label: "Alerts", icon: "bell", m: "Alerts" },
 ] as const;
+const MOBILE = ["/dashboard", "/autopilot", "/watch", "/radar", "/keeper"];
 
 export function NetworkBadge({ compact = false }: { compact?: boolean }) {
   const main = CHAIN_ID === 31612;
@@ -37,22 +43,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[70] focus:rounded focus:bg-btc focus:px-3 focus:py-2 focus:text-btc-ink">Skip to content</a>
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-line bg-panel lg:flex">
         <Link href="/" className="flex h-16 items-center border-b border-line px-5 text-paper" aria-label="Lockwatch home"><Wordmark className="h-6" /></Link>
-        <nav className="flex-1 space-y-0.5 p-3" aria-label="App">
-          {APP_LINKS.map((l) => {
+        <nav className="flex-1 space-y-0.5 overflow-y-auto p-3" aria-label="App">
+          {APP_LINKS.map((l, i) => {
             const a = on(path, l.href);
+            const group = i === 0 ? "Yours" : i === 4 ? "Mezo" : i === 7 ? "Lockwatch" : null;
             return (
-              <Link key={l.href} href={l.href} aria-current={a ? "page" : undefined}
+              <div key={l.href}>
+              {group && <div className={`board-label px-3 pb-1.5 ${i ? "pt-5" : "pt-1"}`}>{group}</div>}
+              <Link href={l.href} aria-current={a ? "page" : undefined}
                 className={`group relative flex min-h-[40px] items-center gap-3 rounded-[4px] px-3 text-sm transition-colors ${a ? "bg-raised text-paper" : "text-mute hover:bg-raised/60 hover:text-paper"}`}>
                 {a && <i className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-btc" aria-hidden="true" />}
                 <Icon name={l.icon} className={`h-[18px] w-[18px] ${a ? "text-btc" : "text-faint group-hover:text-mute"}`} />{l.label}
               </Link>
+              </div>
             );
           })}
         </nav>
         <div className="space-y-3 border-t border-line p-4 text-xs text-mute">
           <NetworkBadge />
           {VAULT && <div className="flex items-center justify-between gap-2"><span>Vault</span><a className="num text-paper hover:text-btc" href={`https://explorer.test.mezo.org/address/${VAULT}`} target="_blank" rel="noreferrer">{short(VAULT)}</a></div>}
-          <div className="flex items-center justify-between gap-2"><span>Keeper</span><span className="flex items-center gap-1.5 text-paper"><i className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" />every 5 min</span></div>
+          <Link href="/keeper" className="flex items-center justify-between gap-2 hover:text-paper"><span>Keeper</span><span className="flex items-center gap-1.5 text-paper"><i className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" />every 5 min</span></Link>
         </div>
       </aside>
 
@@ -75,12 +85,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-panel/95 pb-[env(safe-area-inset-bottom)] supports-[backdrop-filter]:backdrop-blur-md lg:hidden" aria-label="App">
-        {APP_LINKS.map((l) => {
+        {APP_LINKS.filter((l) => MOBILE.includes(l.href)).map((l) => {
           const a = on(path, l.href);
           return (
             <Link key={l.href} href={l.href} aria-current={a ? "page" : undefined} className={`flex min-h-[56px] flex-col items-center justify-center gap-1 text-[0.6875rem] ${a ? "text-paper" : "text-faint"}`}>
               <Icon name={l.icon} className={`h-5 w-5 ${a ? "text-btc" : ""}`} />
-              <span className="max-w-full truncate px-1">{l.label.replace("Redemption ", "").replace("Keeper ", "").replace("Lock explorer", "Explorer")}</span>
+              <span className="max-w-full truncate px-1">{l.m}</span>
             </Link>
           );
         })}

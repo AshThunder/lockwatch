@@ -63,7 +63,9 @@ Deploy: `forge script contracts/script/Deploy.s.sol --rpc-url mezo_testnet --bro
 
 | Network | LockwatchVault |
 |---|---|
-| Mezo testnet (31611) | [`0xD7160697f3ACd0191e65bcccaAFeaa0913D21999`](https://explorer.test.mezo.org/address/0xD7160697f3ACd0191e65bcccaAFeaa0913D21999) (source verified) |
+| Mezo testnet (31611), vault v2 | [`0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB`](https://explorer.test.mezo.org/address/0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB) |
+| Mezo testnet (31611), loan rescue | [`0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e`](https://explorer.test.mezo.org/address/0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e) |
+| Mezo testnet (31611), vault v1 (still served by the keeper) | [`0xD7160697f3ACd0191e65bcccaAFeaa0913D21999`](https://explorer.test.mezo.org/address/0xD7160697f3ACd0191e65bcccaAFeaa0913D21999) (source verified) |
 
 Wallet connection uses the standard RainbowKit modal with Mezo Passport's Bitcoin wallets (Unisat, OKX, Xverse) as an extra group. Set `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` to enable WalletConnect-based wallets; without it, browser/extension wallets still work.
 

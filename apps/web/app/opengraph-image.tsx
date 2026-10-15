@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
-export const alt = "Lockwatch — every veBTC lock departs Thursday 00:00 UTC. Lockwatch makes sure yours doesn't sit idle.";
+export const alt = "Lockwatch — Never miss an unlock. Never leave BTC idle.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -25,7 +25,7 @@ export default function OG() {
           <div style={{ marginLeft: "auto", color: "#A9ADAB", fontSize: 24, letterSpacing: 3 }}>MEZO · veBTC</div>
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 56 }}>{"THURSDAY".split("").map((c) => tile(c))}</div>
-        <div style={{ color: "#F1EEE6", fontSize: 50, fontWeight: 700, marginTop: 36, lineHeight: 1.1, maxWidth: 1000 }}>Every veBTC lock ends on Thursday. Lockwatch keeps yours working.</div>
+        <div style={{ display: "flex", flexDirection: "column", color: "#F1EEE6", fontSize: 58, fontWeight: 700, marginTop: 36, lineHeight: 1.08, maxWidth: 1000, letterSpacing: 1 }}><span>NEVER MISS AN UNLOCK.</span><span style={{ color: "#F7931A" }}>NEVER LEAVE BTC IDLE.</span></div>
         <div style={{ display: "flex", flexDirection: "column", marginTop: "auto", gap: 10 }}>
           {rows.map((r, i) => (
             <div key={i} style={{ display: "flex", gap: 28, fontSize: 26, color: i === 0 ? "#F7931A" : "#A9ADAB", letterSpacing: 2, borderTop: "2px solid #2C3238", paddingTop: 10 }}>
