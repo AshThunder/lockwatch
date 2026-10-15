@@ -9,7 +9,7 @@ import { fetcher, btc, usd, pct } from "@/lib/format";
 import { rescueSteps } from "@/lib/rescue";
 import { CHAIN_ID, RESCUE } from "@/lib/env";
 import { PageHead, State, Skeleton, Stat, ExplorerLink, when } from "@/components/ui";
-import { useToast } from "@/components/feedback";
+import { useToast, withGasBuffer } from "@/components/feedback";
 import { Icon, Spinner } from "@/components/Icon";
 
 const ADDR = ADDRESSES[CHAIN_ID];
@@ -46,7 +46,7 @@ export default function Rescue() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function tx(k: string, args: any) {
     setStep(k);
-    const h = await writeContractAsync(args);
+    const h = await writeContractAsync(await withGasBuffer(pc, address, args));
     const r = await pc!.waitForTransactionReceipt({ hash: h });
     if (r.status !== "success") throw new Error("The transaction reverted onchain.");
     return h;

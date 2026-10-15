@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, usePublicClient, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { Icon, Spinner } from "./Icon";
 import { ExplorerLink } from "./ui";
 
@@ -36,9 +36,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 type Phase = "idle" | "wallet" | "pending" | "done" | "failed";
 const PHASES: { k: Phase; t: string }[] = [{ k: "wallet", t: "Confirm in your wallet" }, { k: "pending", t: "Waiting for Mezo" }, { k: "done", t: "Confirmed" }];
 
+/** Mezo's RPC can under-estimate veBTC/vault calls (seen: viem estimate far below the ~479k cast reported).
+ *  Estimate ourselves, add 50% plus a 100k floor margin, and fall back to the wallet's own estimate on error. */
+export async function withGasBuffer<T extends object>(pc: unknown, account: `0x${string}` | undefined, args: T): Promise<T> {
+  const c = pc as { estimateContractGas?: (a: unknown) => Promise<bigint> } | undefined;
+  if (!c?.estimateContractGas || !account || "gas" in args) return args;
+  try {
+    const est = await c.estimateContractGas({ ...args, account });
+    return { ...args, gas: (est * 3n) / 2n + 100_000n };
+  } catch { return args; }
+}
+
 /** writeContract + receipt, surfaced as a modal with three steps, an explorer link and a toast. */
 export function useTx(title: string, opts: { onSuccess?: () => void; successText?: string } = {}) {
   const { writeContractAsync, data: hash, reset } = useWriteContract();
+  const pc = usePublicClient();
+  const { address: account } = useAccount();
   const r = useWaitForTransactionReceipt({ hash });
   const [phase, setPhase] = useState<Phase>("idle");
   const [err, setErr] = useState<string | null>(null);
@@ -55,7 +68,7 @@ export function useTx(title: string, opts: { onSuccess?: () => void; successText
   }, [r.isSuccess, r.isError]); // eslint-disable-line react-hooks/exhaustive-deps
   async function run(args: Parameters<typeof writeContractAsync>[0]) {
     done.current = false; setErr(null); setPhase("wallet");
-    try { await writeContractAsync(args); setPhase("pending"); }
+    try { await writeContractAsync(await withGasBuffer(pc, account, args)); setPhase("pending"); }
     catch (e) {
       const m = (e as Error).message.split("\n")[0];
       if (/reject|denied/i.test(m)) { setPhase("idle"); toast({ tone: "info", title: "Cancelled in wallet", body: "Nothing was sent." }); }
