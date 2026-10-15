@@ -16,7 +16,7 @@ const when = (ts: number) => new Date(ts * 1000).toUTCString().replace(":00 GMT"
 export function message(kind: Kind, d: Record<string, string>, cfg: Pick<Config, "appUrl" | "chainId">): string {
   const lock = `<a href="${cfg.appUrl}/dashboard">lock #${d.lockId}</a>`;
   switch (kind) {
-    case "lock_t7d": return `⏳ Your veBTC ${lock} (${d.amount} BTC) unlocks in under 7 days — ${when(+d.end)}.\nSet up auto-protect so it doesn't sit unclaimed: ${cfg.appUrl}/protect/${d.lockId}`;
+    case "lock_t7d": return `⏳ Your veBTC ${lock} (${d.amount} BTC) unlocks in under 7 days — ${when(+d.end)}.${d.protected === "1" ? "\n✅ Auto-protect is on." : `\nSet up auto-protect so it doesn't sit unclaimed: ${cfg.appUrl}/protect/${d.lockId}`}`;
     case "lock_t1d": return `⚠️ ${lock} (${d.amount} BTC) unlocks in under 24h — ${when(+d.end)}.${d.protected === "1" ? "\n✅ Auto-protect is on." : `\nProtect it now: ${cfg.appUrl}/protect/${d.lockId}`}`;
     case "lock_expired": return `🔓 ${lock} has expired and ${d.amount} BTC is sitting unclaimed.${d.protected === "1" ? "\nThe keeper will claim it for you shortly." : `\nClaim it now or turn on auto-protect: ${cfg.appUrl}/dashboard`}`;
     case "protected": return `✅ Protected ${lock}: ${d.amount} BTC → ${d.mode}.\n${explorerUrl(cfg.chainId as ChainId, "tx", d.tx)}`;
