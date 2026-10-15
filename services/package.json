@@ -1,0 +1,23 @@
+{
+  "name": "@lockwatch/services",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/worker.ts",
+    "indexer": "tsx src/indexer.ts",
+    "keeper": "tsx src/keeper.ts",
+    "radar": "tsx src/radar.ts",
+    "alerts": "tsx src/alerts.ts",
+    "scan": "tsx src/cli-scan.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@lockwatch/db": "workspace:*",
+    "@lockwatch/sdk": "workspace:*",
+    "tsx": "^4.19.0",
+    "viem": "^2.22.0"
+  },
+  "devDependencies": { "typescript": "^5.6.0", "vitest": "^2.1.0", "@types/node": "^22.0.0" }
+}
