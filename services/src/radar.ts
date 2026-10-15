@@ -3,7 +3,7 @@ import * as repo from "@lockwatch/db";
 import type { Db } from "@lockwatch/db";
 import { zeroAddress, type Address, type PublicClient } from "viem";
 import { loadConfig, publicClientFor, log, type Config } from "./config";
-import { sleep } from "./indexer";
+import { sleep, snapshotStats } from "./indexer";
 
 /** Walks SortedTroves from getLast() (lowest NICR, first to be redeemed) via getPrev() and reads debt/coll. */
 export async function readTroves(client: PublicClient, cfg: Config, max = 5000): Promise<{ troves: Trove[]; price: bigint }> {
@@ -37,6 +37,7 @@ export async function refreshRadar(db: Db, client: PublicClient, cfg: Config) {
   const line = redemptionLine(troves, price);
   await repo.replaceTroves(db, cfg.chainId, line.map((e) => ({ owner: e.owner, coll: e.coll, debt: e.debt, icr: e.icr, rank: e.rank, musdAhead: e.musdAhead, redeemable: e.redeemable })));
   await repo.setCursor(db, `price:${cfg.chainId}`, price.toString());
+  await snapshotStats(db, cfg.chainId, line.length, price); // feeds /api/health + /api/at-risk snapshotTs
   log("radar", "refreshed", { troves: line.length, price });
   return { line, price };
 }

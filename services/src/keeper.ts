@@ -1,7 +1,7 @@
 import { ADDRESSES, lockwatchVaultAbi, hintHelpersAbi, sortedTrovesAbi, inBurstWindow, nicr, GAS_COMPENSATION, Mode, NOT_PROTECTABLE_REASONS, chainById } from "@lockwatch/sdk";
 import * as repo from "@lockwatch/db";
 import type { Db } from "@lockwatch/db";
-import { createWalletClient, http, zeroAddress, formatEther, type Address, type PublicClient } from "viem";
+import { createWalletClient, http, parseEventLogs, zeroAddress, formatEther, type Address, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { loadConfig, publicClientFor, log, type Config } from "./config";
 import { sleep } from "./indexer";
@@ -14,6 +14,8 @@ export interface KeeperChain {
   simulateBatch(ids: bigint[], ups: Address[], lows: Address[]): Promise<boolean[]>;
   sendBatch(ids: bigint[], ups: Address[], lows: Address[]): Promise<`0x${string}`>;
   wait(hash: `0x${string}`): Promise<"success" | "reverted">;
+  /** ids that emitted Protected in the tx. protectBatch swallows per-id failures, so tx success != id success. */
+  protectedIn?(hash: `0x${string}`): Promise<bigint[]>;
   balance(): Promise<bigint>;
 }
 
@@ -57,9 +59,15 @@ export async function keeperTick(db: Db, chain: KeeperChain, chainId: number, no
     if (!go.length) continue;
     const hash = await chain.sendBatch(go.map((x) => x.id), go.map((x) => x.up), go.map((x) => x.low));
     const st = await chain.wait(hash);
+    const done = st === "success" && chain.protectedIn ? new Set((await chain.protectedIn(hash)).map(String)) : null;
     for (const x of go) {
-      if (st === "success") results.push({ id: x.id, ok: true, hash });
-      else { await repo.recordAttempt(db, chainId, x.id, `tx reverted ${hash}`, now); results.push({ id: x.id, ok: false, hash }); }
+      const ok = st === "success" && (!done || done.has(x.id.toString()));
+      if (ok) results.push({ id: x.id, ok: true, hash });
+      else {
+        const { dead } = await repo.recordAttempt(db, chainId, x.id, st === "success" ? `skipped in batch ${hash}` : `tx reverted ${hash}`, now);
+        if (dead) await notify?.((due.find((d) => d.lock_id === x.id.toString()))!.owner, "protect_failed", { lockId: x.id.toString(), reason: "keeper could not protect it 3 times — tap to claim manually" });
+        results.push({ id: x.id, ok: false, hash });
+      }
     }
     log("keeper", "batch", { hash, n: go.length, status: st });
   }
@@ -86,11 +94,22 @@ export function viemKeeperChain(client: PublicClient, cfg: Config): KeeperChain 
     simulateBatch: async (ids, ups, lows) =>
       (await client.simulateContract({ account, address: vault, abi: lockwatchVaultAbi, functionName: "protectBatch", args: [ids, ups, lows] })).result as boolean[],
     sendBatch: async (ids, ups, lows) => {
-      const gas = await client.estimateContractGas({ account, address: vault, abi: lockwatchVaultAbi, functionName: "protectBatch", args: [ids, ups, lows] });
+      // Estimate each id with the reverting single-id `protect` and sum them. Estimating protectBatch itself is
+      // unsafe: it try/catches per id, so the node's minimal-gas search happily returns a limit at which later
+      // ids run out of gas and are silently skipped (found in the fork e2e).
+      let gas = 60_000n;
+      for (let i = 0; i < ids.length; i++) {
+        gas += await client.estimateContractGas({ account, address: vault, abi: lockwatchVaultAbi, functionName: "protect", args: [ids[i], ups[i], lows[i]] }) + 15_000n;
+      }
       const fees = await client.estimateFeesPerGas();
-      return wallet.writeContract({ address: vault, abi: lockwatchVaultAbi, functionName: "protectBatch", args: [ids, ups, lows], gas: (gas * 12n) / 10n, maxFeePerGas: (fees.maxFeePerGas! * 12n) / 10n, maxPriorityFeePerGas: fees.maxPriorityFeePerGas });
+      return wallet.writeContract({ address: vault, abi: lockwatchVaultAbi, functionName: "protectBatch", args: [ids, ups, lows], gas: (gas * 13n) / 10n, maxFeePerGas: (fees.maxFeePerGas! * 12n) / 10n, maxPriorityFeePerGas: fees.maxPriorityFeePerGas });
     },
     wait: async (hash) => (await client.waitForTransactionReceipt({ hash, timeout: 120_000 })).status,
+    protectedIn: async (hash) => {
+      const rc = await client.getTransactionReceipt({ hash });
+      return parseEventLogs({ abi: lockwatchVaultAbi, logs: rc.logs.filter((l) => l.address.toLowerCase() === vault.toLowerCase()), eventName: "Protected" })
+        .map((e) => (e.args as { tokenId: bigint }).tokenId);
+    },
     balance: () => client.getBalance({ address: account.address }),
   };
 }

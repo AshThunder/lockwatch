@@ -46,8 +46,29 @@ export async function fullScan(db: Db, client: PublicClient, cfg: Config) {
   const ids = Array.from({ length: Number(max) }, (_, i) => BigInt(i + 1));
   const rows = await readLocks(client, cfg.chainId, ids, cfg.vault);
   for (const r of rows) await repo.upsertLock(db, r);
+  if (cfg.vault) await reconcileProtections(db, client, cfg, rows.filter((r) => !r.withdrawn).map((r) => r.id));
   log("indexer", "full scan", { locks: rows.length, live: rows.filter((r) => !r.withdrawn).length });
   return rows;
+}
+
+/** Vault prefs are the source of truth: backfills registrations made before the event cursor (fresh DB,
+ *  reset cursor) and deactivates rows whose on-chain pref was cleared. Without this a fresh DB never protects. */
+export async function reconcileProtections(db: Db, client: PublicClient, cfg: Config, ids: bigint[]) {
+  const vault = cfg.vault!;
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const res = await client.multicall({
+      contracts: chunk.map((id) => ({ address: vault, abi: lockwatchVaultAbi, functionName: "prefs", args: [id] })) as never,
+      allowFailure: true,
+    }) as unknown as { status: string; result?: { owner: Address; mode: number } }[];
+    for (let j = 0; j < chunk.length; j++) {
+      const r = res[j];
+      if (r.status !== "success" || !r.result) continue;
+      const { owner, mode } = r.result;
+      if (owner !== zeroAddress) await repo.upsertProtection(db, { chainId: cfg.chainId, lockId: chunk[j], owner, mode, active: true });
+      else await db.query(`UPDATE protection SET active=false WHERE chain_id=$1 AND lock_id=$2 AND active`, [cfg.chainId, chunk[j].toString()]);
+    }
+  }
 }
 
 export async function syncEvents(db: Db, client: PublicClient, cfg: Config, maxRange = 5_000n) {

@@ -14,3 +14,4 @@ contracts/broadcast
 coverage
 pglite-data
 .data
+.env*

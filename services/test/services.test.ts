@@ -51,6 +51,17 @@ describe("keeper", () => {
     expect(calls[0]).toEqual(["0x00000000000000000000000000000000000000b1", Z]);
   });
 
+  it("treats an id the batch silently skipped as a failed attempt, not a success", async () => {
+    await seed(1n, 100);
+    await seed(2n, 100, 1);
+    const ch = fakeChain({ protectedIn: async () => [1n] }); // tx succeeded but only #1 emitted Protected
+    const r = await keeperTick(db, ch, C, 200);
+    expect(r.find((x) => x.id === 1n)?.ok).toBe(true);
+    expect(r.find((x) => x.id === 2n)?.ok).toBe(false);
+    const k = await db.query<{ attempts: number }>(`SELECT attempts FROM keeper_attempt WHERE lock_id='2'`);
+    expect(k[0].attempts).toBe(1);
+  });
+
   it("waits during the vote-reset window without counting a failure", async () => {
     await seed(1n, 100);
     const ch = fakeChain({ isProtectable: async () => [false, 6] });
