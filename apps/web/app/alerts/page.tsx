@@ -6,7 +6,7 @@ import { createSiweMessage } from "viem/siwe";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { CHAIN_ID } from "@/lib/env";
 import { fetcher } from "@/lib/format";
-import { Empty } from "@/components/ui";
+import { Empty, PageHead, StatusPill } from "@/components/ui";
 
 const KINDS: [string, string][] = [
   ["lock_t7d", "Lock unlocks in 7 days"], ["lock_t1d", "Lock unlocks in 24 hours"], ["lock_expired", "Lock expired and unclaimed"],
@@ -42,26 +42,26 @@ export default function Alerts() {
   }
   const has = (c: string) => subs.data?.find((s) => s.channel === c);
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <div><h1 className="text-3xl font-bold">Alerts</h1><p className="text-sm text-mute">Sign in with your wallet (free, no transaction) and choose where we reach you.</p></div>
+    <div className="mx-auto max-w-3xl space-y-10">
+      <PageHead title="Alerts">Sign in with your wallet (free, no transaction) and choose where we reach you.</PageHead>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="card space-y-3">
-          <div className="flex items-center justify-between"><h2 className="font-semibold">Telegram</h2>{has("telegram")?.verified && <span className="pill bg-ok/10 text-ok">linked</span>}</div>
+          <div className="flex items-center justify-between"><h2 className="font-display text-lg font-semibold">Telegram</h2>{has("telegram")?.verified && <StatusPill status="linked" />}</div>
           <p className="text-xs text-mute">Instant messages from @{process.env.NEXT_PUBLIC_TELEGRAM_BOT ?? "LockwatchBot"}. Commands: /locks /radar /mute</p>
           <button className="btn-primary w-full" onClick={() => subscribe("telegram")}>{has("telegram") ? "Re-link Telegram" : "Connect Telegram"}</button>
         </div>
         <div className="card space-y-3">
-          <div className="flex items-center justify-between"><h2 className="font-semibold">Email</h2>{has("email")?.verified && <span className="pill bg-ok/10 text-ok">{has("email")!.target}</span>}</div>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="w-full rounded-xl border border-line bg-black/30 px-3 py-2 text-sm outline-none focus:border-btc" />
+          <div className="flex items-center justify-between"><h2 className="font-display text-lg font-semibold">Email</h2>{has("email")?.verified && <span className="num text-xs text-ok">{has("email")!.target}</span>}</div>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" aria-label="Email address" className="field" />
           <button className="btn-primary w-full" disabled={!email.includes("@")} onClick={() => subscribe("email")}>Send confirmation</button>
         </div>
       </div>
-      {msg && <div className="card text-sm">{msg}</div>}
+      {msg && <p className="border-l border-btc pl-3 text-sm" role="status">{msg}</p>}
       <div className="card">
-        <h2 className="mb-3 font-semibold">What to send me</h2>
+        <h2 className="mb-3 font-display text-lg font-semibold">What to send me</h2>
         <div className="grid gap-2 md:grid-cols-2">
           {KINDS.map(([k, l]) => (
-            <label key={k} className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-white/5">
+            <label key={k} className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-[4px] px-2 hover:bg-raised">
               <input type="checkbox" checked={prefs[k]} onChange={(e) => setPrefs({ ...prefs, [k]: e.target.checked })} className="h-4 w-4 accent-btc" />
               <span className="text-sm">{l}</span>
             </label>

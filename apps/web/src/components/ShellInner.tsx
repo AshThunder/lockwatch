@@ -7,7 +7,7 @@ export function ShellInner({ children }: { children: ReactNode }) {
   return (
     <Providers>
       <Nav />
-      <main className="mx-auto max-w-6xl px-4 pb-24 pt-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl px-5 pb-24 pt-10 md:pt-14">{children}</main>
     </Providers>
   );
 }
