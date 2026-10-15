@@ -7,6 +7,7 @@ import { short } from "@/lib/format";
 import { Wordmark, Mark } from "./Logo";
 import { Icon } from "./Icon";
 import { GlobalSearch } from "./Search";
+import { MobileNav } from "./MobileNav";
 
 export const APP_LINKS = [
   { href: "/dashboard", label: "My locks", icon: "board", m: "Locks" },
@@ -20,7 +21,7 @@ export const APP_LINKS = [
   { href: "/activity", label: "Activity", icon: "activity", m: "Activity" },
   { href: "/alerts", label: "Alerts", icon: "bell", m: "Alerts" },
 ] as const;
-const MOBILE = ["/dashboard", "/autopilot", "/watch", "/radar", "/keeper"];
+const MOBILE = ["/dashboard", "/autopilot", "/watch", "/radar"];
 
 export function NetworkBadge({ compact = false }: { compact?: boolean }) {
   const main = CHAIN_ID === 31612;
@@ -84,17 +85,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </footer>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-panel/95 pb-[env(safe-area-inset-bottom)] supports-[backdrop-filter]:backdrop-blur-md lg:hidden" aria-label="App">
-        {APP_LINKS.filter((l) => MOBILE.includes(l.href)).map((l) => {
-          const a = on(path, l.href);
-          return (
-            <Link key={l.href} href={l.href} aria-current={a ? "page" : undefined} className={`flex min-h-[56px] flex-col items-center justify-center gap-1 text-[0.6875rem] ${a ? "text-paper" : "text-faint"}`}>
-              <Icon name={l.icon} className={`h-5 w-5 ${a ? "text-btc" : ""}`} />
-              <span className="max-w-full truncate px-1">{l.m}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      <MobileNav links={APP_LINKS} primary={MOBILE} path={path} isOn={on} />
     </div>
   );
 }

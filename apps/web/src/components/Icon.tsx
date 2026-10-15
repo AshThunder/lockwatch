@@ -16,6 +16,7 @@ const P: Record<string, React.ReactNode> = {
   activity: <path d="M2.5 10.5h3l2-5 3.5 9 2-4h4.5" />,
   menu: <><path d="M3.5 6h13M3.5 10h13M3.5 14h13" /></>,
   close: <><path d="M5 5l10 10M15 5L5 15" /></>,
+  grid: <><rect x="3.5" y="3.5" width="5" height="5" rx="1" /><rect x="11.5" y="3.5" width="5" height="5" rx="1" /><rect x="3.5" y="11.5" width="5" height="5" rx="1" /><rect x="11.5" y="11.5" width="5" height="5" rx="1" /></>,
   chevL: <path d="M12 5l-5 5 5 5" />, chevR: <path d="M8 5l5 5-5 5" />, chevD: <path d="M5 8l5 5 5-5" />,
   sortUp: <><path d="M10 4v12" /><path d="M6 8l4-4 4 4" /></>, sortDown: <><path d="M10 4v12" /><path d="M6 12l4 4 4-4" /></>,
   copy: <><rect x="7" y="7" width="9" height="9" rx="1.5" /><path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4h-6A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7" /></>,
