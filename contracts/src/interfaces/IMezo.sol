@@ -25,11 +25,17 @@ interface IVeBTC {
     function escrowType(uint256 tokenId) external view returns (uint8);
     function withdraw(uint256 tokenId) external;
     function createLockFor(uint256 value, uint256 lockDuration, address to) external returns (uint256);
+    function increaseUnlockTime(uint256 tokenId, uint256 lockDuration) external;
 }
 
 interface IVoter {
     function reset(uint256 tokenId) external;
     function lastVoted(uint256 tokenId) external view returns (uint256);
+    function isGauge(address gauge) external view returns (bool);
+    function gaugeToBribe(address gauge) external view returns (address);
+    function gaugeToFees(address gauge) external view returns (address);
+    function claimBribes(address[] calldata bribes, address[][] calldata tokens, uint256 tokenId) external;
+    function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) external;
 }
 
 interface IBorrowerOperationsSignatures {
@@ -43,7 +49,37 @@ interface IBorrowerOperationsSignatures {
         uint256 deadline
     ) external payable;
 
+    function addCollWithSignature(
+        address upperHint,
+        address lowerHint,
+        address borrower,
+        bytes calldata signature,
+        uint256 deadline
+    ) external payable;
+
+    function repayMUSDWithSignature(
+        uint256 amount,
+        address upperHint,
+        address lowerHint,
+        address borrower,
+        bytes calldata signature,
+        uint256 deadline
+    ) external;
+
     function getNonce(address user) external view returns (uint256);
+}
+
+interface ITroveManager {
+    function getCurrentICR(address borrower, uint256 price) external view returns (uint256);
+    function getTroveStatus(address borrower) external view returns (uint256);
+}
+
+interface IPriceFeed {
+    function fetchPrice() external view returns (uint256);
+}
+
+interface IERC20From {
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
 /// @notice Mezo "MUSD Savings Rate" (sMUSD). deposit() mints to msg.sender; shares are a plain ERC-20.

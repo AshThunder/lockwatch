@@ -3,7 +3,10 @@ pragma solidity 0.8.28;
 
 import {IERC20Min, IVeBTC, IVoter, IBorrowerOperationsSignatures, ISavingsMUSD} from "./interfaces/IMezo.sol";
 
-/// @title LockwatchVault
+/// @title LockwatchVault (v2)
+/// @notice v2 adds auto-extend (keeper calls veBTC.increaseUnlockTime as the approved operator so voting
+///         power never lapses) and reward auto-claim (keeper calls Voter.claimBribes/claimFees for registered
+///         gauges; the reward contracts pay `ownerOf(tokenId)` directly, so the vault never touches rewards).
 /// @notice Permissionless auto-protection for expired veBTC locks on Mezo.
 ///         A lock owner approves this contract on one tokenId and records what should happen at expiry.
 ///         After expiry anyone (a keeper) can call `protect`, which clears votes, withdraws the BTC and
@@ -50,13 +53,35 @@ contract LockwatchVault {
     IERC20Min public immutable musd;
     ISavingsMUSD public immutable smusd; // address(0) disables MUSD_SAVINGS
 
+    /// @notice Auto-extend policy. When `end - now <= triggerWithin`, anyone may call `extend`, which sets the
+    ///         lock end to floor((now + duration) / week) * week via increaseUnlockTime. duration 0 = maxLock.
+    struct ExtendPolicy {
+        address owner;
+        uint32 triggerWithin; // seconds before expiry that the extension may run
+        uint32 duration; // seconds; 0 = keep at maximum
+    }
+
+    uint256 internal constant WEEK = 1 weeks;
+    uint8 internal constant TOO_EARLY = 8;
+    uint8 internal constant ALREADY_EXPIRED = 9;
+    uint8 internal constant NO_GAIN = 10;
+
+    uint256 public immutable maxLock; // veBTC maxLockTime (not exposed by veBTC; set at deploy)
+
     mapping(uint256 => Pref) internal _prefs;
+    mapping(uint256 => ExtendPolicy) internal _extend;
+    mapping(uint256 => address) public rewardsOwner; // opted-in owner for reward auto-claim
     uint256 private _lock = 1;
 
     event Registered(uint256 indexed tokenId, address indexed owner, Mode mode);
     event Unregistered(uint256 indexed tokenId, address indexed owner);
     event Protected(uint256 indexed tokenId, address indexed owner, Mode mode, uint256 amount, uint256 newLockId);
     event Fallback(uint256 indexed tokenId, address indexed owner, Mode requested, bytes reason);
+    event ExtendSet(uint256 indexed tokenId, address indexed owner, uint32 triggerWithin, uint32 duration);
+    event ExtendCleared(uint256 indexed tokenId, address indexed owner);
+    event Extended(uint256 indexed tokenId, address indexed owner, uint256 oldEnd, uint256 newEnd);
+    event RewardsAutoSet(uint256 indexed tokenId, address indexed owner, bool enabled);
+    event RewardsClaimed(uint256 indexed tokenId, address indexed owner, uint256 gauges);
 
     error Reentrancy();
     error NotLockOwner();
@@ -67,6 +92,9 @@ contract LockwatchVault {
     error LengthMismatch();
     error OnlySelf();
     error InsufficientGas();
+    error NotExtendable(uint8 reason);
+    error NotGauge(address gauge);
+    error RewardsNotEnabled();
 
     modifier nonReentrant() {
         if (_lock != 1) revert Reentrancy();
@@ -75,7 +103,14 @@ contract LockwatchVault {
         _lock = 1;
     }
 
-    constructor(IVeBTC ve_, IBorrowerOperationsSignatures bos_, IERC20Min musd_, ISavingsMUSD smusd_) {
+    constructor(
+        IVeBTC ve_,
+        IBorrowerOperationsSignatures bos_,
+        IERC20Min musd_,
+        ISavingsMUSD smusd_,
+        uint256 maxLock_
+    ) {
+        maxLock = maxLock_;
         ve = ve_;
         voter = IVoter(ve_.voter());
         btc = IERC20Min(ve_.token());
@@ -115,7 +150,69 @@ contract LockwatchVault {
         emit Unregistered(tokenId, o);
     }
 
+    /// @notice Set auto-extend for `tokenId`. Caller must own the lock and approve the vault on it.
+    function setExtendPolicy(uint256 tokenId, uint32 triggerWithin, uint32 duration) external {
+        if (ve.ownerOf(tokenId) != msg.sender) revert NotLockOwner();
+        if (triggerWithin == 0 || triggerWithin > maxLock || duration > maxLock) revert InvalidPref();
+        if (duration != 0 && duration < WEEK) revert InvalidPref();
+        _extend[tokenId] = ExtendPolicy(msg.sender, triggerWithin, duration);
+        emit ExtendSet(tokenId, msg.sender, triggerWithin, duration);
+    }
+
+    function clearExtendPolicy(uint256 tokenId) external {
+        address o = _extend[tokenId].owner;
+        if (o == address(0)) revert NotRegistered();
+        if (msg.sender != o && msg.sender != _ownerOrZero(tokenId)) revert NotLockOwner();
+        delete _extend[tokenId];
+        emit ExtendCleared(tokenId, o);
+    }
+
+    /// @notice Opt `tokenId` in/out of reward auto-claim. Rewards always go to the lock owner.
+    function setRewardsAuto(uint256 tokenId, bool enabled) external {
+        if (ve.ownerOf(tokenId) != msg.sender) revert NotLockOwner();
+        rewardsOwner[tokenId] = enabled ? msg.sender : address(0);
+        emit RewardsAutoSet(tokenId, msg.sender, enabled);
+    }
+
     // ---------------------------------------------------------------- keeper actions
+
+    /// @notice Permissionless. Extends a lock per its owner's policy. Moves no funds.
+    function extend(uint256 tokenId) external nonReentrant returns (uint256 newEnd) {
+        (bool can, uint8 why, uint256 end, uint256 target) = _extendCheck(tokenId);
+        if (!can) revert NotExtendable(why);
+        ExtendPolicy memory e = _extend[tokenId];
+        ve.increaseUnlockTime(tokenId, e.duration == 0 ? maxLock : e.duration);
+        newEnd = ve.locked(tokenId).end;
+        assert(newEnd == target);
+        emit Extended(tokenId, e.owner, end, newEnd);
+    }
+
+    /// @notice Permissionless. Claims bribe and fee rewards for registered Voter gauges. Mezo's reward
+    ///         contracts pay `veBTC.ownerOf(tokenId)` directly; the vault only acts as the approved caller.
+    function claimRewards(
+        uint256 tokenId,
+        address[] calldata gauges,
+        address[][] calldata bribeTokens,
+        address[][] calldata feeTokens
+    ) external nonReentrant {
+        address o = rewardsOwner[tokenId];
+        if (o == address(0) || o != _ownerOrZero(tokenId)) revert RewardsNotEnabled();
+        if (ve.getApproved(tokenId) != address(this) && !ve.isApprovedForAll(o, address(this))) {
+            revert NotProtectable(NOT_APPROVED);
+        }
+        uint256 n = gauges.length;
+        if (bribeTokens.length != n || feeTokens.length != n) revert LengthMismatch();
+        address[] memory bribes = new address[](n);
+        address[] memory fees = new address[](n);
+        for (uint256 i; i < n; ++i) {
+            if (!voter.isGauge(gauges[i])) revert NotGauge(gauges[i]);
+            bribes[i] = voter.gaugeToBribe(gauges[i]);
+            fees[i] = voter.gaugeToFees(gauges[i]);
+        }
+        voter.claimBribes(bribes, bribeTokens, tokenId);
+        voter.claimFees(fees, feeTokens, tokenId);
+        emit RewardsClaimed(tokenId, o, n);
+    }
 
     /// @notice Permissionless. Protects an expired, registered, approved lock.
     /// @param upperHint lowerHint SortedTroves insert hints for MUSD modes (untrusted; only affect gas).
@@ -170,7 +267,35 @@ contract LockwatchVault {
         return (true, OK);
     }
 
+    function extendPolicy(uint256 tokenId) external view returns (ExtendPolicy memory) {
+        return _extend[tokenId];
+    }
+
+    /// @notice Keeper helper for auto-extend: (ok, reason, current end, end after extend).
+    function canExtend(uint256 tokenId) external view returns (bool, uint8, uint256, uint256) {
+        return _extendCheck(tokenId);
+    }
+
     // ---------------------------------------------------------------- internals
+
+    function _extendCheck(uint256 tokenId) internal view returns (bool, uint8, uint256 end, uint256 target) {
+        ExtendPolicy memory e = _extend[tokenId];
+        if (e.owner == address(0)) return (false, NOT_REGISTERED, 0, 0);
+        address cur = _ownerOrZero(tokenId);
+        if (cur != e.owner) return (false, STALE_OWNER, 0, 0);
+        if (ve.escrowType(tokenId) != 0) return (false, NOT_NORMAL, 0, 0);
+        IVeBTC.LockedBalance memory l = ve.locked(tokenId);
+        end = l.end;
+        if (l.isPermanent) return (false, PERMANENT, end, 0);
+        if (block.timestamp >= end) return (false, ALREADY_EXPIRED, end, 0);
+        if (ve.getApproved(tokenId) != address(this) && !ve.isApprovedForAll(cur, address(this))) {
+            return (false, NOT_APPROVED, end, 0);
+        }
+        if (end - block.timestamp > e.triggerWithin) return (false, TOO_EARLY, end, 0);
+        target = ((block.timestamp + (e.duration == 0 ? maxLock : e.duration)) / WEEK) * WEEK;
+        if (target <= end) return (false, NO_GAIN, end, target);
+        return (true, OK, end, target);
+    }
 
     function _protect(uint256 tokenId, address upperHint, address lowerHint)
         internal
@@ -181,6 +306,8 @@ contract LockwatchVault {
 
         Pref memory p = _prefs[tokenId];
         delete _prefs[tokenId]; // effects before interactions
+        delete _extend[tokenId];
+        delete rewardsOwner[tokenId];
 
         if (ve.voted(tokenId)) voter.reset(tokenId);
 

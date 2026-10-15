@@ -16,7 +16,9 @@ export interface MezoAddresses {
   hintHelpers: Hex;
   musd: Hex;
   smusd: Hex | null;
-  lockwatchVault: Hex | null; // set after deployment
+  lockwatchVault: Hex | null; // current vault (v2: protect + auto-extend + reward auto-claim)
+  lockwatchVaultsLegacy: Hex[]; // older vaults the keeper still serves (existing registrations keep working)
+  lockwatchRescue: Hex | null; // loan rescue escrow
   veBTCDeployBlock: bigint;
 }
 
@@ -34,7 +36,9 @@ export const ADDRESSES: Record<ChainId, MezoAddresses> = {
     hintHelpers: "0x4e4cBA3779d56386ED43631b4dCD6d8EacEcBCF6",
     musd: "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503",
     smusd: null,
-    lockwatchVault: "0xD7160697f3ACd0191e65bcccaAFeaa0913D21999",
+    lockwatchVault: "0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB",
+    lockwatchVaultsLegacy: ["0xD7160697f3ACd0191e65bcccaAFeaa0913D21999"],
+    lockwatchRescue: "0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e",
     veBTCDeployBlock: 0n,
   },
   [MEZO_MAINNET]: {
@@ -51,6 +55,8 @@ export const ADDRESSES: Record<ChainId, MezoAddresses> = {
     musd: "0xdD468A1DDc392dcdbEf6db6e34E89AA338F9F186",
     smusd: "0xb4D498029af77680cD1eF828b967f010d06C51CC",
     lockwatchVault: null,
+    lockwatchVaultsLegacy: [],
+    lockwatchRescue: null,
     veBTCDeployBlock: 0n,
   },
 };

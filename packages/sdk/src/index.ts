@@ -5,4 +5,7 @@ export * from "./radar";
 export * from "./eip712";
 export * from "./abi/mezo";
 export { lockwatchVaultAbi } from "./abi/LockwatchVault";
+export { lockwatchRescueAbi } from "./abi/LockwatchRescue";
+export * from "./calendar";
+export * from "./automation";
 export * from "./chains";

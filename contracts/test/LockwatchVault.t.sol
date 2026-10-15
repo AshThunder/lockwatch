@@ -264,7 +264,7 @@ contract LockwatchVaultTest is Base {
 
     function test_savingsDisabled_rejectsMode() public {
         LockwatchVault v2 = new LockwatchVault(
-            IVeBTC(address(ve)), IBorrowerOperationsSignatures(address(bos)), IERC20Min(address(musd)), ISavingsMUSD(address(0))
+            IVeBTC(address(ve)), IBorrowerOperationsSignatures(address(bos)), IERC20Min(address(musd)), ISavingsMUSD(address(0)), 30 days
         );
         uint256 id = _lock(alice, 1 ether, 10 days);
         LockwatchVault.Pref memory p = _musdPref(LockwatchVault.Mode.MUSD_SAVINGS, 1 ether, 3000e18, address(v2));

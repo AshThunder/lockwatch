@@ -36,35 +36,38 @@ export const liveLocks = (db: Db, chainId: number) =>
 
 export async function upsertProtection(db: Db, p: {
   chainId: number; lockId: bigint; owner: string; mode: number; active: boolean;
-  txHash?: string; amount?: bigint; newLockId?: bigint; fallbackReason?: string;
+  txHash?: string; amount?: bigint; newLockId?: bigint; fallbackReason?: string; vault?: string;
 }) {
   await db.query(
-    `INSERT INTO protection (chain_id,lock_id,owner,mode,active,tx_hash,amount,new_lock_id,fallback_reason,updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    `INSERT INTO protection (chain_id,lock_id,owner,mode,active,tx_hash,amount,new_lock_id,fallback_reason,updated_at,vault)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      ON CONFLICT (chain_id,lock_id) DO UPDATE SET owner=EXCLUDED.owner, mode=EXCLUDED.mode, active=EXCLUDED.active,
        tx_hash=COALESCE(EXCLUDED.tx_hash, protection.tx_hash), amount=COALESCE(EXCLUDED.amount, protection.amount),
        new_lock_id=COALESCE(EXCLUDED.new_lock_id, protection.new_lock_id),
-       fallback_reason=COALESCE(EXCLUDED.fallback_reason, protection.fallback_reason), updated_at=EXCLUDED.updated_at`,
+       fallback_reason=COALESCE(EXCLUDED.fallback_reason, protection.fallback_reason), updated_at=EXCLUDED.updated_at,
+       vault=COALESCE(EXCLUDED.vault, protection.vault)`,
     [p.chainId, p.lockId.toString(), lc(p.owner), p.mode, p.active, p.txHash ?? null, p.amount?.toString() ?? null,
-     p.newLockId?.toString() ?? null, p.fallbackReason ?? null, now()],
+     p.newLockId?.toString() ?? null, p.fallbackReason ?? null, now(), p.vault ? lc(p.vault) : null],
   );
 }
 
-export interface ProtectionRow { chain_id: number; lock_id: string; owner: string; mode: number; active: boolean; tx_hash: string | null; amount: string | null; new_lock_id: string | null; fallback_reason: string | null }
+export interface ProtectionRow { chain_id: number; lock_id: string; owner: string; mode: number; active: boolean; tx_hash: string | null; amount: string | null; new_lock_id: string | null; fallback_reason: string | null; vault?: string | null }
 
 export const protectionsByOwner = (db: Db, chainId: number, owner: string) =>
   db.query<ProtectionRow>(`SELECT * FROM protection WHERE chain_id=$1 AND owner=$2`, [chainId, lc(owner)]);
 
-/** Keeper work queue: active protections whose lock has expired and that aren't backing off. */
-export const dueProtections = (db: Db, chainId: number, ts: number) =>
+/** Keeper work queue: active protections whose lock has expired and that aren't backing off.
+ *  `vault` filters to one vault; rows with NULL vault belong to `legacyDefault` (the v1 vault). */
+export const dueProtections = (db: Db, chainId: number, ts: number, vault?: { address: string; isDefaultForNull: boolean }) =>
   db.query<{ lock_id: string; owner: string; mode: number; amount: string; voted: boolean }>(
     `SELECT p.lock_id, p.owner, p.mode, l.amount, l.voted FROM protection p
        JOIN lock l ON l.chain_id=p.chain_id AND l.id=p.lock_id
        LEFT JOIN keeper_attempt k ON k.chain_id=p.chain_id AND k.lock_id=p.lock_id
      WHERE p.chain_id=$1 AND p.active AND NOT l.withdrawn AND l.lock_end <= $2
        AND (k.lock_id IS NULL OR (NOT k.dead AND k.next_try_at <= $2))
+       ${vault ? (vault.isDefaultForNull ? "AND (p.vault IS NULL OR p.vault=$3)" : "AND p.vault=$3") : ""}
      ORDER BY l.lock_end`,
-    [chainId, ts],
+    vault ? [chainId, ts, lc(vault.address)] : [chainId, ts],
   );
 
 export async function recordAttempt(db: Db, chainId: number, lockId: bigint, error: string, ts: number, maxAttempts = 3) {
@@ -213,4 +216,91 @@ export async function exploreLocks(db: Db, chainId: number, o: { state?: "expire
     db.query<{ n: string | number; s: string | null }>(`SELECT count(*) AS n, sum(amount) AS s FROM lock WHERE ${w}`, args),
   ]);
   return { rows, total: Number(cnt[0]?.n ?? 0), totalAmount: String(cnt[0]?.s ?? "0") };
+}
+
+// ---------------------------------------------------------------- v3: automation, keeper log, watchlists, wallets
+export interface ExtendRow { lock_id: string; owner: string; trigger_within: string | number; duration: string | number; active: boolean; last_tx: string | null; last_extended_at: string | number | null }
+export async function upsertExtend(db: Db, e: { chainId: number; lockId: bigint; owner: string; triggerWithin: number; duration: number; active: boolean; lastTx?: string; extendedAt?: number }) {
+  await db.query(
+    `INSERT INTO extend_policy (chain_id,lock_id,owner,trigger_within,duration,active,last_tx,last_extended_at,updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     ON CONFLICT (chain_id,lock_id) DO UPDATE SET owner=EXCLUDED.owner, trigger_within=EXCLUDED.trigger_within, duration=EXCLUDED.duration,
+       active=EXCLUDED.active, last_tx=COALESCE(EXCLUDED.last_tx, extend_policy.last_tx),
+       last_extended_at=COALESCE(EXCLUDED.last_extended_at, extend_policy.last_extended_at), updated_at=EXCLUDED.updated_at`,
+    [e.chainId, e.lockId.toString(), lc(e.owner), e.triggerWithin, e.duration, e.active, e.lastTx ?? null, e.extendedAt ?? null, now()]);
+}
+export const markExtended = (db: Db, chainId: number, lockId: bigint, tx: string, ts = now()) =>
+  db.query(`UPDATE extend_policy SET last_tx=$3, last_extended_at=$4, updated_at=$4 WHERE chain_id=$1 AND lock_id=$2`, [chainId, lockId.toString(), tx, ts]);
+export const setExtendActive = (db: Db, chainId: number, lockId: bigint, active: boolean) =>
+  db.query(`UPDATE extend_policy SET active=$3, updated_at=$4 WHERE chain_id=$1 AND lock_id=$2`, [chainId, lockId.toString(), active, now()]);
+/** Live, unexpired locks with an active policy whose extend window has opened. */
+export const dueExtends = (db: Db, chainId: number, ts: number) =>
+  db.query<ExtendRow & { lock_end: string | number }>(
+    `SELECT e.*, l.lock_end FROM extend_policy e JOIN lock l ON l.chain_id=e.chain_id AND l.id=e.lock_id
+      WHERE e.chain_id=$1 AND e.active AND NOT l.withdrawn AND NOT l.permanent AND l.lock_end > $2 AND l.lock_end - $2 <= e.trigger_within
+      ORDER BY l.lock_end`, [chainId, ts]);
+export const extendsByOwner = (db: Db, chainId: number, owner: string) =>
+  db.query<ExtendRow>(`SELECT * FROM extend_policy WHERE chain_id=$1 AND owner=$2 AND active`, [chainId, lc(owner)]);
+
+export interface RewardsRow { lock_id: string; owner: string; enabled: boolean; last_claim_at: string | number; last_tx: string | null }
+export async function upsertRewards(db: Db, r: { chainId: number; lockId: bigint; owner: string; enabled: boolean }) {
+  await db.query(
+    `INSERT INTO rewards_auto (chain_id,lock_id,owner,enabled,updated_at) VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (chain_id,lock_id) DO UPDATE SET owner=EXCLUDED.owner, enabled=EXCLUDED.enabled, updated_at=EXCLUDED.updated_at`,
+    [r.chainId, r.lockId.toString(), lc(r.owner), r.enabled, now()]);
+}
+export const markRewardsClaimed = (db: Db, chainId: number, lockId: bigint, tx: string | null, ts = now()) =>
+  db.query(`UPDATE rewards_auto SET last_claim_at=$3, last_tx=COALESCE($4,last_tx), updated_at=$3 WHERE chain_id=$1 AND lock_id=$2`, [chainId, lockId.toString(), ts, tx]);
+export const enabledRewards = (db: Db, chainId: number) =>
+  db.query<RewardsRow>(`SELECT r.* FROM rewards_auto r JOIN lock l ON l.chain_id=r.chain_id AND l.id=r.lock_id
+     WHERE r.chain_id=$1 AND r.enabled AND NOT l.withdrawn ORDER BY r.lock_id`, [chainId]);
+export const rewardsByOwner = (db: Db, chainId: number, owner: string) =>
+  db.query<RewardsRow>(`SELECT * FROM rewards_auto WHERE chain_id=$1 AND owner=$2 AND enabled`, [chainId, lc(owner)]);
+
+export interface RescueRow { borrower: string; trigger_icr: string; add_amount: string; repay_amount: string; deadline: string | number; btc_escrow: string; musd_escrow: string; active: boolean; last_tx: string | null; updated_at: string | number }
+export async function upsertRescue(db: Db, r: { chainId: number; borrower: string; triggerIcr: bigint; addAmount: bigint; repayAmount: bigint; deadline: number; btcEscrow: bigint; musdEscrow: bigint; active: boolean; lastTx?: string }) {
+  await db.query(
+    `INSERT INTO rescue_rule (chain_id,borrower,trigger_icr,add_amount,repay_amount,deadline,btc_escrow,musd_escrow,active,last_tx,updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (chain_id,borrower) DO UPDATE SET trigger_icr=EXCLUDED.trigger_icr, add_amount=EXCLUDED.add_amount, repay_amount=EXCLUDED.repay_amount,
+       deadline=EXCLUDED.deadline, btc_escrow=EXCLUDED.btc_escrow, musd_escrow=EXCLUDED.musd_escrow, active=EXCLUDED.active,
+       last_tx=COALESCE(EXCLUDED.last_tx, rescue_rule.last_tx), updated_at=EXCLUDED.updated_at`,
+    [r.chainId, lc(r.borrower), r.triggerIcr.toString(), r.addAmount.toString(), r.repayAmount.toString(), r.deadline, r.btcEscrow.toString(), r.musdEscrow.toString(), r.active, r.lastTx ?? null, now()]);
+}
+export const activeRescues = (db: Db, chainId: number, ts = now()) =>
+  db.query<RescueRow>(`SELECT * FROM rescue_rule WHERE chain_id=$1 AND active AND deadline >= $2`, [chainId, ts]);
+export const rescueOf = async (db: Db, chainId: number, borrower: string) =>
+  (await db.query<RescueRow>(`SELECT * FROM rescue_rule WHERE chain_id=$1 AND borrower=$2`, [chainId, lc(borrower)]))[0];
+
+export interface KeeperRunRow { id: number; job: string; subject: string | null; ok: boolean; tx_hash: string | null; detail: string | null; ts: string | number }
+export const logRun = (db: Db, r: { chainId: number; job: string; subject?: string; ok: boolean; txHash?: string; detail?: string; ts?: number }) =>
+  db.query(`INSERT INTO keeper_run (chain_id,job,subject,ok,tx_hash,detail,ts) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [r.chainId, r.job, r.subject ?? null, r.ok, r.txHash ?? null, r.detail?.slice(0, 500) ?? null, r.ts ?? now()]);
+export const keeperRuns = (db: Db, chainId: number, o: { since?: number; actionsOnly?: boolean; limit?: number; offset?: number } = {}) =>
+  db.query<KeeperRunRow>(`SELECT * FROM keeper_run WHERE chain_id=$1 AND ts >= $2 ${o.actionsOnly ? "AND job <> 'heartbeat'" : ""}
+     ORDER BY ts DESC, id DESC LIMIT ${Math.min(Math.max(o.limit ?? 5000, 1), 10000)} OFFSET ${Math.max(o.offset ?? 0, 0)}`, [chainId, o.since ?? 0]);
+/** Heartbeats older than 7 days are pruned; actions are kept. */
+export const pruneHeartbeats = (db: Db, chainId: number, ts = now()) =>
+  db.query(`DELETE FROM keeper_run WHERE chain_id=$1 AND job='heartbeat' AND ts < $2`, [chainId, ts - 7 * 86400]);
+
+export interface WatchRow { account: string; address: string; label: string | null; created_at: string | number }
+export const addWatch = (db: Db, account: string, address: string, label?: string) =>
+  db.query(`INSERT INTO watch (account,address,label,created_at) VALUES ($1,$2,$3,$4) ON CONFLICT (account,address) DO UPDATE SET label=EXCLUDED.label`,
+    [lc(account), lc(address), label?.slice(0, 64) ?? null, now()]);
+export const removeWatch = (db: Db, account: string, address: string) =>
+  db.query(`DELETE FROM watch WHERE account=$1 AND address=$2`, [lc(account), lc(address)]);
+export const watchlist = (db: Db, account: string) =>
+  db.query<WatchRow>(`SELECT * FROM watch WHERE account=$1 ORDER BY created_at`, [lc(account)]);
+/** Accounts that watch `address` (for alert fan-out). */
+export const watchersOf = (db: Db, address: string) =>
+  db.query<{ account: string }>(`SELECT account FROM watch WHERE address=$1`, [lc(address)]);
+
+export const linkWallet = (db: Db, account: string, address: string) =>
+  db.query(`INSERT INTO wallet_link (account,address,created_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [lc(account), lc(address), now()]);
+export const unlinkWallet = (db: Db, account: string, address: string) =>
+  db.query(`DELETE FROM wallet_link WHERE account=$1 AND address=$2`, [lc(account), lc(address)]);
+/** The account itself plus every linked wallet. */
+export async function walletsOf(db: Db, account: string) {
+  const rows = await db.query<{ address: string }>(`SELECT address FROM wallet_link WHERE account=$1 ORDER BY created_at`, [lc(account)]);
+  return [lc(account), ...rows.map((r) => r.address).filter((a) => a !== lc(account))];
 }

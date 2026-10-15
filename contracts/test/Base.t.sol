@@ -34,7 +34,7 @@ abstract contract Base is Test {
         bos = new MockBOS(musd);
         smusd = new MockSMUSD(musd);
         vault = new LockwatchVault(
-            IVeBTC(address(ve)), IBorrowerOperationsSignatures(address(bos)), IERC20Min(address(musd)), ISavingsMUSD(address(smusd))
+            IVeBTC(address(ve)), IBorrowerOperationsSignatures(address(bos)), IERC20Min(address(musd)), ISavingsMUSD(address(smusd)), 30 days
         );
         vm.label(address(vault), "vault");
     }

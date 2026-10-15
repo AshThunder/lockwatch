@@ -3,7 +3,8 @@ import * as repo from "@lockwatch/db";
 import type { Db } from "@lockwatch/db";
 import { createWalletClient, http, parseEventLogs, zeroAddress, formatEther, type Address, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { loadConfig, publicClientFor, log, type Config } from "./config";
+import { loadConfig, publicClientFor, log, allVaults, type Config } from "./config";
+import { extendTick, rewardsTick, rescueTick, viemExtendChain, viemRewardsChain, viemRescueChain, type ExtendChain, type RewardsChain, type RescueChain } from "./automation";
 import { sleep } from "./indexer";
 
 /** Chain side of the keeper, injectable for tests. */
@@ -19,14 +20,16 @@ export interface KeeperChain {
   balance(): Promise<bigint>;
 }
 
-export interface Notify { (owner: string, kind: "protect_failed" | "keeper_low_balance", data: Record<string, string>): Promise<void> }
+export type NotifyKind = "protect_failed" | "keeper_low_balance" | "extended" | "rewards_claimed" | "rescued";
+export interface Notify { (owner: string, kind: NotifyKind, data: Record<string, string>): Promise<void> }
 
 export const CHUNK = 20;
 export const LOW_BALANCE = 2n * 10n ** 15n; // 0.002 BTC
 
 /** One keeper pass: pick due protections, pre-check on chain, compute MUSD hints, send batches. */
-export async function keeperTick(db: Db, chain: KeeperChain, chainId: number, now: number, notify?: Notify) {
-  const due = await repo.dueProtections(db, chainId, now);
+export async function keeperTick(db: Db, chain: KeeperChain, chainId: number, now: number, notify?: Notify,
+  vault?: { address: string; isDefaultForNull: boolean }, opts: { checkBalance?: boolean } = {}) {
+  const due = await repo.dueProtections(db, chainId, now, vault);
   const ready: { id: bigint; up: Address; low: Address }[] = [];
   for (const d of due) {
     const id = BigInt(d.lock_id);
@@ -62,6 +65,7 @@ export async function keeperTick(db: Db, chain: KeeperChain, chainId: number, no
     const done = st === "success" && chain.protectedIn ? new Set((await chain.protectedIn(hash)).map(String)) : null;
     for (const x of go) {
       const ok = st === "success" && (!done || done.has(x.id.toString()));
+      await repo.logRun(db, { chainId, job: "protect", subject: x.id.toString(), ok, txHash: hash, detail: ok ? undefined : st === "success" ? "skipped in batch" : "tx reverted", ts: now });
       if (ok) results.push({ id: x.id, ok: true, hash });
       else {
         const { dead } = await repo.recordAttempt(db, chainId, x.id, st === "success" ? `skipped in batch ${hash}` : `tx reverted ${hash}`, now);
@@ -71,18 +75,20 @@ export async function keeperTick(db: Db, chain: KeeperChain, chainId: number, no
     }
     log("keeper", "batch", { hash, n: go.length, status: st });
   }
-  const bal = await chain.balance();
-  if (bal < LOW_BALANCE) await notify?.("admin", "keeper_low_balance", { balance: formatEther(bal) });
+  if (opts.checkBalance !== false) {
+    const bal = await chain.balance();
+    if (bal < LOW_BALANCE) await notify?.("admin", "keeper_low_balance", { balance: formatEther(bal) });
+  }
   return results;
 }
 
-export function viemKeeperChain(client: PublicClient, cfg: Config): KeeperChain {
-  if (!cfg.vault) throw new Error("LOCKWATCH_VAULT not set");
+export function viemKeeperChain(client: PublicClient, cfg: Config, vaultOverride?: Address): KeeperChain {
+  if (!cfg.vault && !vaultOverride) throw new Error("LOCKWATCH_VAULT not set");
   if (!cfg.keeperKey) throw new Error("KEEPER_PRIVATE_KEY not set");
   const account = privateKeyToAccount(cfg.keeperKey);
   const wallet = createWalletClient({ account, chain: chainById(cfg.chainId), transport: http(cfg.rpc) });
   const a = ADDRESSES[cfg.chainId];
-  const vault = cfg.vault;
+  const vault = (vaultOverride ?? cfg.vault)!;
   return {
     isProtectable: async (id) => (await client.readContract({ address: vault, abi: lockwatchVaultAbi, functionName: "isProtectable", args: [id] })) as [boolean, number],
     prefDebt: async (id) => ((await client.readContract({ address: vault, abi: lockwatchVaultAbi, functionName: "prefs", args: [id] })) as { debt: bigint }).debt,
@@ -114,13 +120,47 @@ export function viemKeeperChain(client: PublicClient, cfg: Config): KeeperChain 
   };
 }
 
+/** One full keeper pass over every job: protect (all vaults), auto-extend, reward claims, loan rescue, heartbeat. */
+export async function keeperPass(db: Db, jobs: KeeperJobs, chainId: number, now: number, notify?: Notify) {
+  const out: Record<string, unknown> = {};
+  for (const [i, v] of jobs.vaults.entries()) {
+    try { out[`protect:${v.address}`] = await keeperTick(db, v.chain, chainId, now, notify, { address: v.address, isDefaultForNull: v.isDefaultForNull }, { checkBalance: i === 0 }); }
+    catch (e) { log("keeper", "protect error", { vault: v.address, err: String(e).slice(0, 300) }); }
+  }
+  if (jobs.extend) try { out.extend = await extendTick(db, jobs.extend, chainId, now, notify); } catch (e) { log("keeper", "extend error", { err: String(e).slice(0, 300) }); }
+  if (jobs.rewards) try { out.rewards = await rewardsTick(db, jobs.rewards, chainId, now, notify); } catch (e) { log("keeper", "rewards error", { err: String(e).slice(0, 300) }); }
+  if (jobs.rescue) try { out.rescue = await rescueTick(db, jobs.rescue, chainId, now, notify); } catch (e) { log("keeper", "rescue error", { err: String(e).slice(0, 300) }); }
+  await repo.logRun(db, { chainId, job: "heartbeat", ok: true, ts: now });
+  await repo.pruneHeartbeats(db, chainId, now);
+  return out;
+}
+
+export interface KeeperJobs {
+  vaults: { address: string; isDefaultForNull: boolean; chain: KeeperChain }[];
+  extend?: ExtendChain;
+  rewards?: RewardsChain;
+  rescue?: RescueChain;
+}
+
+export function viemKeeperJobs(client: PublicClient, cfg: Config): KeeperJobs {
+  const v1 = cfg.legacyVaults.at(-1) ?? cfg.vault;
+  const vaults = allVaults(cfg).map((v) => ({ address: v, isDefaultForNull: v.toLowerCase() === v1?.toLowerCase(), chain: viemKeeperChain(client, cfg, v) }));
+  return {
+    vaults,
+    extend: cfg.vault ? viemExtendChain(client, cfg) : undefined,
+    rewards: cfg.vault ? viemRewardsChain(client, cfg) : undefined,
+    rescue: cfg.rescue ? viemRescueChain(client, cfg) : undefined,
+  };
+}
+
 /** 5-minute cadence, 30-second burst around the Thursday 00:00 UTC epoch flip and the 01:00 vote-window opening. */
 export async function runKeeper(db: Db, cfg = loadConfig(), notify?: Notify, signal?: AbortSignal) {
   const client = publicClientFor(cfg) as PublicClient;
-  const chain = viemKeeperChain(client, cfg);
+  const jobs = viemKeeperJobs(client, cfg);
+  log("keeper", "jobs", { vaults: jobs.vaults.map((v) => v.address), extend: !!jobs.extend, rewards: !!jobs.rewards, rescue: !!jobs.rescue });
   while (!signal?.aborted) {
     const now = Math.floor(Date.now() / 1000);
-    try { await keeperTick(db, chain, cfg.chainId, now, notify); } catch (e) { log("keeper", "error", { err: String(e).slice(0, 300) }); }
+    try { await keeperPass(db, jobs, cfg.chainId, now, notify); } catch (e) { log("keeper", "error", { err: String(e).slice(0, 300) }); }
     await sleep(inBurstWindow(now) ? 30_000 : 5 * 60_000, signal);
   }
 }

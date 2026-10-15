@@ -3,11 +3,13 @@ pragma solidity 0.8.28;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {LockwatchVault} from "../src/LockwatchVault.sol";
+import {LockwatchRescue} from "../src/LockwatchRescue.sol";
+import {ITroveManager, IPriceFeed} from "../src/interfaces/IMezo.sol";
 import {IVeBTC, IBorrowerOperationsSignatures, IERC20Min, ISavingsMUSD} from "../src/interfaces/IMezo.sol";
 
 /// forge script script/Deploy.s.sol --rpc-url mezo_testnet --broadcast  (needs a funded DEPLOYER key)
 contract Deploy is Script {
-    function run() external returns (LockwatchVault v) {
+    function run() external returns (LockwatchVault v, LockwatchRescue r) {
         (address ve, address bos, address musd, address smusd) = block.chainid == 31612
             ? (
                 0x7D807e9CE1ef73048FEe9A4214e75e894ea25914,
@@ -22,8 +24,19 @@ contract Deploy is Script {
                 vm.envOr("TESTNET_SMUSD", address(0)) // no sMUSD on testnet yet
             );
         vm.startBroadcast();
-        v = new LockwatchVault(IVeBTC(ve), IBorrowerOperationsSignatures(bos), IERC20Min(musd), ISavingsMUSD(smusd));
+        v = new LockwatchVault(IVeBTC(ve), IBorrowerOperationsSignatures(bos), IERC20Min(musd), ISavingsMUSD(smusd), vm.envOr("MAX_LOCK", uint256(30 days)));
+        if (block.chainid == 31611) {
+            // testnet MUSD: TroveManager / PriceFeed read from BorrowerOperations
+            r = new LockwatchRescue(
+                IBorrowerOperationsSignatures(bos),
+                ITroveManager(0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0),
+                IPriceFeed(0x86bCF0841622a5dAC14A313a15f96A95421b9366),
+                IERC20Min(0x7b7C000000000000000000000000000000000000),
+                IERC20Min(musd)
+            );
+        }
         vm.stopBroadcast();
         console2.log("LockwatchVault", address(v));
+        console2.log("LockwatchRescue", address(r));
     }
 }

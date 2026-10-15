@@ -92,6 +92,31 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         } catch {}
     }
 
+    uint256 public extends;
+    uint256 public badExtends; // ghost: extend that shortened a lock, changed its owner, or exceeded max
+
+    function setExtend(uint256 s, uint32 trig, uint32 dur, bool approve) external {
+        uint256 id = _id(s);
+        if (id == 0 || ve._owner(id) == address(0)) return;
+        address o = ve._owner(id);
+        vm.startPrank(o);
+        if (approve) ve.approve(address(vault), id);
+        try vault.setExtendPolicy(id, uint32(bound(trig, 1, 30 days)), uint32(bound(dur, 0, 30 days))) {} catch {}
+        vm.stopPrank();
+    }
+
+    function extend(uint256 s, uint256 callerSeed) external {
+        uint256 id = _id(s);
+        if (id == 0 || ve._owner(id) == address(0)) return;
+        address o = ve._owner(id);
+        uint256 end0 = ve.locked(id).end;
+        vm.prank(_actor(callerSeed));
+        try vault.extend(id) returns (uint256 newEnd) {
+            extends++;
+            if (newEnd <= end0 || newEnd > block.timestamp + 30 days || ve._owner(id) != o) badExtends++;
+        } catch {}
+    }
+
     function actorsLength() external view returns (uint256) { return actors.length; }
 }
 
@@ -121,6 +146,11 @@ contract LockwatchVaultInvariant is Base {
         uint256 sum = address(ve).balance;
         for (uint256 i; i < h.actorsLength(); ++i) sum += h.actors(i).balance;
         assertEq(sum, h.minted());
+    }
+
+    /// 5. Auto-extend only ever lengthens a lock, within maxLock, without touching ownership.
+    function invariant_extendSafe() public view {
+        assertEq(h.badExtends(), 0);
     }
 
     /// 4. Vault leaves no lingering BTC allowance to veBTC.

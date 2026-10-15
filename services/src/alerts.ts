@@ -5,16 +5,24 @@ import type { Address } from "viem";
 import { loadConfig, log, type Config } from "./config";
 import { telegram, resend, consoleChannel, type Channel } from "./notify";
 import { sleep } from "./indexer";
+import type { NotifyKind } from "./keeper";
 
-export type Kind = "lock_t7d" | "lock_t1d" | "lock_expired" | "protected" | "protect_failed" | "fallback" | "radar_watch" | "radar_danger" | "icr_low";
-export const ALL_KINDS: Kind[] = ["lock_t7d", "lock_t1d", "lock_expired", "protected", "protect_failed", "fallback", "radar_watch", "radar_danger", "icr_low"];
+export type Kind = "lock_t7d" | "lock_t1d" | "lock_expired" | "protected" | "protect_failed" | "fallback" | "radar_watch" | "radar_danger" | "icr_low" | "extended" | "rewards_claimed" | "rescued";
+export const ALL_KINDS: Kind[] = ["lock_t7d", "lock_t1d", "lock_expired", "protected", "protect_failed", "fallback", "radar_watch", "radar_danger", "icr_low", "extended", "rewards_claimed", "rescued"];
+/** Kinds that also fire for watched wallets (read-only: nothing the watcher can act on except awareness). */
+export const WATCH_KINDS: Kind[] = ["lock_t7d", "lock_t1d", "lock_expired", "protected", "radar_danger", "icr_low"];
 export const TYPICAL_REDEMPTION = BigInt(process.env.TYPICAL_REDEMPTION_MUSD ?? "10000") * 10n ** 18n;
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const when = (ts: number) => new Date(ts * 1000).toUTCString().replace(":00 GMT", " UTC");
 
 export function message(kind: Kind, d: Record<string, string>, cfg: Pick<Config, "appUrl" | "chainId">): string {
-  const lock = `<a href="${cfg.appUrl}/dashboard">lock #${d.lockId}</a>`;
+  const body = messageBody(kind, d, cfg);
+  return d.watch ? `👁 Watched wallet ${d.watch}:\n${body.replace(/^(\S+) Your /, "$1 Its ").replace(/your /g, "its ")}` : body;
+}
+
+function messageBody(kind: Kind, d: Record<string, string>, cfg: Pick<Config, "appUrl" | "chainId">): string {
+  const lock = `<a href="${cfg.appUrl}/lock/${d.lockId}">lock #${d.lockId}</a>`;
   switch (kind) {
     case "lock_t7d": return `⏳ Your veBTC ${lock} (${d.amount} BTC) unlocks in under 7 days — ${when(+d.end)}.${d.protected === "1" ? "\n✅ Auto-protect is on." : `\nSet up auto-protect so it doesn't sit unclaimed: ${cfg.appUrl}/protect/${d.lockId}`}`;
     case "lock_t1d": return `⚠️ ${lock} (${d.amount} BTC) unlocks in under 24h — ${when(+d.end)}.${d.protected === "1" ? "\n✅ Auto-protect is on." : `\nProtect it now: ${cfg.appUrl}/protect/${d.lockId}`}`;
@@ -25,6 +33,9 @@ export function message(kind: Kind, d: Record<string, string>, cfg: Pick<Config,
     case "radar_watch": return `👀 Redemption Radar: your MUSD loan ${short(d.owner)} is #${d.rank} in the redemption line with ${d.ahead} MUSD ahead.\n${cfg.appUrl}/radar`;
     case "radar_danger": return `🚨 Redemption Radar: only ${d.ahead} MUSD of loans sit ahead of yours (#${d.rank}, ICR ${d.icr}). A redemption could swap your BTC for MUSD.\nAdd collateral or repay to move back: ${cfg.appUrl}/radar`;
     case "icr_low": return `🩸 Your loan's collateral ratio is ${d.icr}. Below 110% it can be liquidated.\n${cfg.appUrl}/radar`;
+    case "extended": return `🔁 Auto-extend: ${lock} now unlocks ${when(+d.end)}, so its voting power keeps running.\n${explorerUrl(cfg.chainId as ChainId, "tx", d.tx)}`;
+    case "rewards_claimed": return `💰 Claimed ${d.amount} in gauge rewards for ${lock} (${d.gauges} gauge${d.gauges === "1" ? "" : "s"}), paid straight to your wallet.\n${explorerUrl(cfg.chainId as ChainId, "tx", d.tx)}`;
+    case "rescued": return `🛟 Loan rescue ran at ICR ${d.icr}: added ${d.btc} BTC and repaid ${d.musd} MUSD into your own trove.\n${explorerUrl(cfg.chainId as ChainId, "tx", d.tx)}`;
   }
 }
 
@@ -33,8 +44,21 @@ const MODE_NAMES = ["returned to your wallet", "re-locked", "MUSD loan", "MUSD �
 /** Computes alerts for one subscriber. Returns [key, kind, data] tuples; the caller dedupes via alert_log. */
 export async function alertsFor(db: Db, sub: SubRow, chainId: number, now: number): Promise<[string, Kind, Record<string, string>][]> {
   const out: [string, Kind, Record<string, string>][] = [];
-  const locks = await repo.locksByOwner(db, chainId, sub.address);
-  const prots = await repo.protectionsByOwner(db, chainId, sub.address);
+  // the subscriber's own wallet, every wallet linked to it (multi-wallet portfolio), then its watchlist
+  const linked = await repo.walletsOf(db, sub.address);
+  const watched = (await repo.watchlist(db, sub.address)).filter((w) => !linked.includes(w.address));
+  for (const a of linked) out.push(...(await alertsForAddress(db, a, chainId, now)));
+  for (const w of watched) {
+    const label = w.label ? `${w.label} (${short(w.address)})` : short(w.address);
+    for (const [k, kind, d] of await alertsForAddress(db, w.address, chainId, now)) if (WATCH_KINDS.includes(kind)) out.push([`w:${k}`, kind, { ...d, watch: label }]);
+  }
+  return out.filter(([, k, d]) => sub.prefs?.[k] !== false && !(d.watch && sub.prefs?.watch_alerts === false));
+}
+
+async function alertsForAddress(db: Db, address: string, chainId: number, now: number): Promise<[string, Kind, Record<string, string>][]> {
+  const out: [string, Kind, Record<string, string>][] = [];
+  const locks = await repo.locksByOwner(db, chainId, address);
+  const prots = await repo.protectionsByOwner(db, chainId, address);
   const protectedIds = new Set(prots.filter((p) => p.active).map((p) => p.lock_id));
   for (const l of locks) {
     for (const k of dueExpiryAlerts({ end: Number(l.lock_end), permanent: l.permanent }, now)) {
@@ -45,7 +69,7 @@ export async function alertsFor(db: Db, sub: SubRow, chainId: number, now: numbe
     if (!p.active && p.tx_hash) out.push([`protected:${chainId}:${p.lock_id}`, "protected", { lockId: p.lock_id, amount: fmt18(BigInt(p.amount ?? 0)), mode: MODE_NAMES[p.mode], tx: p.tx_hash }]);
     if (p.fallback_reason) out.push([`fallback:${chainId}:${p.lock_id}`, "fallback", { lockId: p.lock_id, mode: MODE_NAMES[p.mode], reason: p.fallback_reason.startsWith("0x") ? "the call reverted" : p.fallback_reason }]);
   }
-  const t = await repo.troveOf(db, chainId, sub.address);
+  const t = await repo.troveOf(db, chainId, address);
   if (t) {
     const e: LineEntry = { owner: t.owner as Address, coll: BigInt(t.coll), debt: BigInt(t.debt), icr: BigInt(t.icr), rank: t.rank, musdAhead: BigInt(t.musd_ahead), redeemable: t.redeemable };
     const day = Math.floor(now / 86400);
@@ -55,7 +79,7 @@ export async function alertsFor(db: Db, sub: SubRow, chainId: number, now: numbe
     else if (risk === "watch") out.push([`radar_watch:${chainId}:${t.owner}:${Math.floor(day / 7)}`, "radar_watch", d]);
     else if (risk === "liquidatable") out.push([`icr_low:${chainId}:${t.owner}:${day}`, "icr_low", d]);
   }
-  return out.filter(([, k]) => sub.prefs?.[k] !== false);
+  return out;
 }
 
 export async function alertsTick(db: Db, channels: Record<"telegram" | "email", Channel>, cfg: Pick<Config, "appUrl" | "chainId">, now: number) {
@@ -78,14 +102,15 @@ export async function alertsTick(db: Db, channels: Record<"telegram" | "email", 
 
 /** Direct notice used by the keeper (failures, low balance). */
 export function keeperNotifier(db: Db, channels: Record<"telegram" | "email", Channel>, cfg: Config) {
-  return async (owner: string, kind: "protect_failed" | "keeper_low_balance", data: Record<string, string>) => {
+  return async (owner: string, kind: NotifyKind, data: Record<string, string>) => {
     if (kind === "keeper_low_balance") {
       if (cfg.adminChatId) await channels.telegram.send(cfg.adminChatId, `🔋 Keeper balance low: ${data.balance} BTC`);
       return;
     }
+    const key = kind === "protect_failed" ? `protect_failed:${cfg.chainId}:${data.lockId}:${data.reason}` : `${kind}:${cfg.chainId}:${data.tx}`;
     for (const s of await repo.subsByAddress(db, owner)) {
-      if (!s.verified || !s.target) continue;
-      if (await repo.claimAlert(db, s.id, `protect_failed:${cfg.chainId}:${data.lockId}:${data.reason}`, kind)) await channels[s.channel].send(s.target, message("protect_failed", data, cfg));
+      if (!s.verified || !s.target || s.prefs?.[kind] === false || s.prefs?.muted) continue;
+      if (await repo.claimAlert(db, s.id, key, kind)) await channels[s.channel].send(s.target, message(kind, data, cfg));
     }
   };
 }

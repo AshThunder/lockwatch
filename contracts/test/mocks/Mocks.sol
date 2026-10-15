@@ -41,6 +41,7 @@ contract MockERC20 {
     uint256 public totalSupply;
     constructor(string memory s) { symbol = s; }
     function mint(address to, uint256 v) external { balanceOf[to] += v; totalSupply += v; }
+    function burnFrom(address f, uint256 v) external { balanceOf[f] -= v; totalSupply -= v; }
     function approve(address s, uint256 v) external returns (bool) { allowance[msg.sender][s] = v; return true; }
     function transfer(address t, uint256 v) external returns (bool) { balanceOf[msg.sender] -= v; balanceOf[t] += v; return true; }
     function transferFrom(address f, address t, uint256 v) external returns (bool) {
@@ -59,6 +60,19 @@ contract MockVoter {
         lastVoted[id] = block.timestamp;
         ve.voting(id, true);
     }
+    // ---- gauges / rewards (tigris Voter + VotingReward: rewards paid to ve.ownerOf(tokenId))
+    mapping(address => bool) public isGauge;
+    mapping(address => address) public gaugeToBribe;
+    mapping(address => address) public gaugeToFees;
+    function addGauge(address g, address bribe, address fees) external { isGauge[g] = true; gaugeToBribe[g] = bribe; gaugeToFees[g] = fees; }
+    function claimBribes(address[] memory b, address[][] memory t, uint256 id) external {
+        require(ve.isApprovedOrOwner(msg.sender, id), "NotApprovedOrOwner");
+        for (uint256 i; i < b.length; ++i) MockReward(b[i]).getReward(id, t[i]);
+    }
+    function claimFees(address[] memory f, address[][] memory t, uint256 id) external {
+        require(ve.isApprovedOrOwner(msg.sender, id), "NotApprovedOrOwner");
+        for (uint256 i; i < f.length; ++i) MockReward(f[i]).getReward(id, t[i]);
+    }
     function reset(uint256 id) external {
         require(!resetReverts, "reset");
         uint256 es = block.timestamp - (block.timestamp % 1 weeks);
@@ -69,7 +83,26 @@ contract MockVoter {
     }
 }
 
+/// @notice tigris VotingReward model: only voter/approved may call; pays ve.ownerOf(tokenId).
+contract MockReward {
+    address public voter;
+    IVeBTCAdmin public ve;
+    mapping(uint256 => mapping(address => uint256)) public earned;
+    constructor(address v, address e) { voter = v; ve = IVeBTCAdmin(e); }
+    function notify(uint256 id, address token, uint256 amt) external { earned[id][token] += amt; }
+    function getReward(uint256 id, address[] memory tokens) external {
+        require(msg.sender == voter || ve.isApprovedOrOwner(msg.sender, id), "NotAuthorized");
+        address o = ve.ownerOf(id);
+        for (uint256 i; i < tokens.length; ++i) {
+            uint256 a = earned[id][tokens[i]];
+            earned[id][tokens[i]] = 0;
+            if (a > 0) MockERC20(tokens[i]).mint(o, a);
+        }
+    }
+}
+
 interface IVeBTCAdmin {
+    function ownerOf(uint256) external view returns (address);
     function isApprovedOrOwner(address, uint256) external view returns (bool);
     function voting(uint256, bool) external;
 }
@@ -120,6 +153,19 @@ contract MockVeBTC {
         id = ++tokenId;
         _owner[id] = to;
         _locked[id] = IVeBTC.LockedBalance(int128(int256(v)), end, false);
+    }
+
+    function increaseUnlockTime(uint256 id, uint256 d) external {
+        require(isApprovedOrOwner(msg.sender, id), "NotApprovedOrOwner");
+        require(escrowType[id] == 0, "NotNormalNFT");
+        IVeBTC.LockedBalance storage l = _locked[id];
+        require(!l.isPermanent, "PermanentLock");
+        uint256 end = ((block.timestamp + d) / WEEK) * WEEK;
+        require(l.end > block.timestamp, "LockExpired");
+        require(l.amount > 0, "NoLockFound");
+        require(end > l.end, "LockDurationNotInFuture");
+        require(end <= block.timestamp + maxLockTime, "LockDurationTooLong");
+        l.end = end;
     }
 
     function withdraw(uint256 id) external {
@@ -188,6 +234,46 @@ contract MockBOS {
         troveColl[borrower] = msg.value;
         troveDebt[borrower] = debt;
         musd.mint(recipient, debt);
+    }
+}
+
+/// @notice MUSD AddColl / RepayMUSD signature paths + TroveManager/PriceFeed views for LockwatchRescue tests.
+contract MockBOS2 is MockBOS {
+    bytes32 public constant ADD_COLL_TYPEHASH = keccak256("AddColl(uint256 assetAmount,address borrower,uint256 nonce,uint256 deadline)");
+    bytes32 public constant REPAY_MUSD_TYPEHASH = keccak256("RepayMUSD(uint256 amount,address borrower,uint256 nonce,uint256 deadline)");
+    mapping(address => uint256) public status;
+    constructor(MockERC20 m) MockBOS(m) {}
+
+    function seedTrove(address b, uint256 coll, uint256 debt) external { troveColl[b] = coll; troveDebt[b] = debt; status[b] = 1; }
+    function getTroveStatus(address b) external view returns (uint256) { return status[b]; }
+    function getCurrentICR(address b, uint256 p) public view returns (uint256) {
+        return troveDebt[b] == 0 ? type(uint256).max : troveColl[b] * p / troveDebt[b];
+    }
+    function fetchPrice() external view returns (uint256) { return price; }
+
+    function digest2(bytes32 th, uint256 amt, address b, uint256 nonce, uint256 deadline) public view returns (bytes32) {
+        bytes32 sh = keccak256(abi.encodePacked(th, abi.encode(amt, b), nonce, deadline));
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), sh));
+    }
+    function _verify(bytes32 th, uint256 amt, address b, bytes memory sig, uint256 deadline) internal {
+        require(block.timestamp <= deadline, "Signature expired");
+        bytes32 d = digest2(th, amt, b, getNonce[b], deadline);
+        require(sig.length == 65, "siglen");
+        bytes32 r; bytes32 s; uint8 v;
+        assembly { r := mload(add(sig, 32)) s := mload(add(sig, 64)) v := byte(0, mload(add(sig, 96))) }
+        require(ecrecover(d, v, r, s) == b, "BorrowerOperationsSignatures: Invalid signature");
+        getNonce[b]++;
+    }
+    function addCollWithSignature(address, address, address b, bytes memory sig, uint256 deadline) external payable {
+        _verify(ADD_COLL_TYPEHASH, msg.value, b, sig, deadline);
+        require(status[b] == 1, "inactive");
+        troveColl[b] += msg.value;
+    }
+    function repayMUSDWithSignature(uint256 amt, address, address, address b, bytes memory sig, uint256 deadline) external {
+        _verify(REPAY_MUSD_TYPEHASH, amt, b, sig, deadline);
+        require(status[b] == 1, "inactive");
+        musd.burnFrom(msg.sender, amt); // MUSD burns from the caller
+        troveDebt[b] -= amt;
     }
 }
 
