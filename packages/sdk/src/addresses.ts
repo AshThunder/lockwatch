@@ -34,7 +34,7 @@ export const ADDRESSES: Record<ChainId, MezoAddresses> = {
     hintHelpers: "0x4e4cBA3779d56386ED43631b4dCD6d8EacEcBCF6",
     musd: "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503",
     smusd: null,
-    lockwatchVault: null,
+    lockwatchVault: "0xD7160697f3ACd0191e65bcccaAFeaa0913D21999",
     veBTCDeployBlock: 0n,
   },
   [MEZO_MAINNET]: {

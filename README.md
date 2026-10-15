@@ -59,6 +59,14 @@ cd apps/web && DATABASE_URL=../../.data/pglite pnpm build && pnpm start
 ```
 Deploy: `forge script contracts/script/Deploy.s.sol --rpc-url mezo_testnet --broadcast`, then set `LOCKWATCH_VAULT` / `NEXT_PUBLIC_LOCKWATCH_VAULT` (see `.env.example`).
 
+## Deployments
+
+| Network | LockwatchVault |
+|---|---|
+| Mezo testnet (31611) | [`0xD7160697f3ACd0191e65bcccaAFeaa0913D21999`](https://explorer.test.mezo.org/address/0xD7160697f3ACd0191e65bcccaAFeaa0913D21999) (source verified) |
+
+Wallet connection uses the standard RainbowKit modal with Mezo Passport's Bitcoin wallets (Unisat, OKX, Xverse) as an extra group. Set `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` to enable WalletConnect-based wallets; without it, browser/extension wallets still work.
+
 ## Testnet addresses
 veBTC `0xB63f…9231` · Voter `0x72F8…5738` · BorrowerOperationsSignatures `0xD757…639e` · sMUSD (mainnet) `0xb4D4…51CC` — full list in `packages/sdk/src/addresses.ts`.
 
