@@ -5,6 +5,7 @@ export interface CalendarLock {
   end: number; // unix seconds (Thursday 00:00 UTC)
   voted?: boolean;
   protectedMode?: string | null; // e.g. "Send BTC to my wallet"
+  asset?: "btc" | "mezo"; // default btc
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -30,16 +31,18 @@ export function icsFold(line: string): string {
 }
 
 export function lockEventText(l: CalendarLock, appUrl: string) {
-  const title = `veBTC lock #${l.id} unlocks (${btc(l.amount)} BTC)`;
-  const plan = l.protectedMode ? `Lockwatch will: ${l.protectedMode}.` : "Not protected: the BTC sits idle until you claim it.";
+  const sym = l.asset === "mezo" ? "MEZO" : "BTC";
+  const title = `ve${sym} lock #${l.id} unlocks (${btc(l.amount)} ${sym})`;
+  const plan = l.protectedMode ? `Lockwatch will: ${l.protectedMode}.` : `Not protected: the ${sym} sits idle until you claim it.`;
   const votes = l.voted ? " This lock has gauge votes; they can be cleared from 01:00 UTC." : "";
-  return { title, details: `${plan}${votes} ${appUrl}/lock/${l.id}`.trim(), url: `${appUrl}/lock/${l.id}` };
+  const url = `${appUrl}/lock/${l.id}${l.asset === "mezo" ? "?asset=mezo" : ""}`;
+  return { title, details: `${plan}${votes} ${url}`.trim(), url };
 }
 
 /** Wallet feed: one 30-minute event per upcoming lock end, with 7-day and 1-day alarms. */
 export function buildIcs(address: string, locks: CalendarLock[], appUrl: string, now = Math.floor(Date.now() / 1000)): string {
   const lines = [
-    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Lockwatch//veBTC unlocks//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Lockwatch//veBTC and veMEZO unlocks//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
     `X-WR-CALNAME:${icsEscape(`Lockwatch ${address.slice(0, 6)}…${address.slice(-4)}`)}`, "X-WR-TIMEZONE:UTC",
     "REFRESH-INTERVAL;VALUE=DURATION:PT6H", "X-PUBLISHED-TTL:PT6H",
   ];
@@ -47,7 +50,7 @@ export function buildIcs(address: string, locks: CalendarLock[], appUrl: string,
     const t = lockEventText(l, appUrl);
     lines.push(
       "BEGIN:VEVENT",
-      `UID:lockwatch-${l.id}-${l.end}@lockwatch.vercel.app`,
+      `UID:lockwatch-${l.asset === "mezo" ? "m" : ""}${l.id}-${l.end}@lockwatch.vercel.app`,
       `DTSTAMP:${icsDate(now)}`,
       `DTSTART:${icsDate(l.end)}`,
       `DTEND:${icsDate(l.end + 1800)}`,

@@ -211,7 +211,7 @@ describe("keeper page", () => {
     expect(screen.getByText("75.0%")).toBeTruthy();
     expect(screen.getByText("99%")).toBeTruthy();
     expect(screen.getByText("0.0098 BTC")).toBeTruthy();
-    expect(screen.getByText("#380")).toBeTruthy();
+    expect(screen.getByText("veBTC #380")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Rescue" }));
     await screen.findByText("Nothing here yet");
     expect(calls.some((c) => c.url.includes("job=rescue"))).toBe(true);

@@ -132,6 +132,10 @@ const voterAbi2 = parseAbi([
   "function gaugeToBribe(address) view returns (address)",
   "function gaugeToFees(address) view returns (address)",
 ]);
+const boostVoterAbi = parseAbi([
+  "function gaugeVote(uint256 tokenId, uint256 index) view returns (address)",
+  "function gaugeToBribe(address) view returns (address)",
+]);
 const rewardAbi = parseAbi([
   "function rewardsListLength() view returns (uint256)",
   "function rewards(uint256) view returns (address)",
@@ -161,7 +165,8 @@ export function viemExtendChain(client: PublicClient, cfg: Config): ExtendChain 
 export function viemRewardsChain(client: PublicClient, cfg: Config): RewardsChain {
   const { account, wallet } = writer(cfg);
   const vault = cfg.vault!;
-  const voter = ADDRESSES[cfg.chainId].voter;
+  const voter = cfg.voter;
+  const boost = cfg.asset === "mezo"; // veMEZO BoostVoter: bribes only, gauges found per lock via gaugeVote
   let gaugeCache: { at: number; list: { gauge: Address; bribe: Address; fees: Address; bribeTokens: Address[]; feeTokens: Address[] }[] } | null = null;
   async function tokensOf(reward: Address): Promise<Address[]> {
     const n = Number(await client.readContract({ address: reward, abi: rewardAbi, functionName: "rewardsListLength" }));
@@ -184,10 +189,21 @@ export function viemRewardsChain(client: PublicClient, cfg: Config): RewardsChai
     gaugeCache = { at: Date.now(), list };
     return list;
   }
+  /** veMEZO: the BoostVoter has 600+ boost gauges, so only the gauges this lock votes for are checked. */
+  async function votedGauges(id: bigint) {
+    const list: { gauge: Address; bribe: Address; fees: Address; bribeTokens: Address[]; feeTokens: Address[] }[] = [];
+    for (let i = 0; i < 64; i++) {
+      let gauge: Address;
+      try { gauge = await client.readContract({ address: voter, abi: boostVoterAbi, functionName: "gaugeVote", args: [id, BigInt(i)] }) as Address; } catch { break; }
+      const bribe = await client.readContract({ address: voter, abi: boostVoterAbi, functionName: "gaugeToBribe", args: [gauge] }) as Address;
+      list.push({ gauge, bribe, fees: zeroAddress, bribeTokens: await tokensOf(bribe), feeTokens: [] });
+    }
+    return list;
+  }
   const earned = (reward: Address, tokens: Address[], id: bigint) =>
     Promise.all(tokens.map(async (token) => ({ token, earned: (await client.readContract({ address: reward, abi: rewardAbi, functionName: "earned", args: [token, id] })) as bigint })));
   return {
-    claimable: async (id) => Promise.all((await gauges()).map(async (g) => ({ gauge: g.gauge, bribe: await earned(g.bribe, g.bribeTokens, id), fees: await earned(g.fees, g.feeTokens, id) }))),
+    claimable: async (id) => Promise.all((boost ? await votedGauges(id) : await gauges()).map(async (g) => ({ gauge: g.gauge, bribe: await earned(g.bribe, g.bribeTokens, id), fees: g.feeTokens.length ? await earned(g.fees, g.feeTokens, id) : [] }))),
     claim: async (id, gs, bt, ft) => {
       const { request } = await client.simulateContract({ account, address: vault, abi: lockwatchVaultAbi, functionName: "claimRewards", args: [id, gs, bt, ft] });
       return wallet.writeContract(request);

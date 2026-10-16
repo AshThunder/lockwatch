@@ -41,3 +41,17 @@ describe("read models", () => {
     expect((await r.attemptById(db, 7, 4n))?.attempts).toBe(1);
   });
 });
+
+import { describe as d2, it as i2, expect as e2 } from "vitest";
+import * as r2 from "../src";
+d2("exploreLocks state=all", () => {
+  i2("binds only the parameters it uses (regression: unused $2 rejected by Postgres)", async () => {
+    const db = await r2.connect("memory");
+    await r2.upsertLock(db, { chainId: 1031611, id: 1n, owner: "0x00000000000000000000000000000000000000aa", amount: 5n, end: 1, permanent: false, voted: false });
+    await r2.upsertLock(db, { chainId: 1031611, id: 2n, owner: "0x00000000000000000000000000000000000000aa", amount: 7n, end: 4_000_000_000, permanent: false, voted: false });
+    const r = await r2.exploreLocks(db, 1031611, { state: "all" });
+    e2(r.total).toBe(2);
+    e2(r.totalAmount).toBe("12");
+    e2((await r2.exploreLocks(db, 31611, { state: "all" })).total).toBe(0);
+  });
+});

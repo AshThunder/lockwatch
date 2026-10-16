@@ -1,8 +1,12 @@
-import { ADDRESSES, RPC, type ChainId, chainById } from "@lockwatch/sdk";
+import { ADDRESSES, RPC, type ChainId, type Asset, chainById, ledgerId, assetContracts } from "@lockwatch/sdk";
 import { createPublicClient, http, type Address } from "viem";
 
 export interface Config {
   chainId: ChainId;
+  asset: Asset; // which vote-escrow this pipeline serves
+  ledger: number; // DB key for lock-scoped tables (chainId for veBTC, chainId+1e6 for veMEZO)
+  ve: Address;
+  voter: Address;
   rpc: string;
   vault: Address | null; // current vault (v2)
   legacyVaults: Address[]; // older vaults the keeper still serves (v1 holds lock #380's registration)
@@ -15,10 +19,23 @@ export interface Config {
   adminChatId?: string; // low-balance / dead-letter notices
 }
 
-export function loadConfig(env = process.env): Config {
+export function loadConfig(env = process.env, asset: Asset = "btc"): Config {
   const chainId = (Number(env.CHAIN_ID ?? 31611) as ChainId);
+  const base = loadBtc(env, chainId);
+  if (asset === "btc") return base;
+  const c = assetContracts(chainId, "mezo");
   return {
-    chainId,
+    ...base, asset, ledger: ledgerId(chainId, "mezo"), ve: c.ve, voter: c.voter,
+    vault: (env.LOCKWATCH_VAULT_MEZO as Address | undefined) ?? c.vault, legacyVaults: [], rescue: null,
+  };
+}
+
+/** Every pipeline the worker runs: veBTC (with MUSD radar/rescue) and veMEZO. */
+export const loadConfigs = (env = process.env): Config[] => [loadConfig(env, "btc"), loadConfig(env, "mezo")];
+
+function loadBtc(env: NodeJS.ProcessEnv, chainId: ChainId): Config {
+  return {
+    chainId, asset: "btc", ledger: chainId, ve: ADDRESSES[chainId].veBTC, voter: ADDRESSES[chainId].voter,
     rpc: env.RPC_URL ?? RPC[chainId],
     vault: (env.LOCKWATCH_VAULT as Address | undefined) ?? ADDRESSES[chainId].lockwatchVault,
     legacyVaults: (env.LOCKWATCH_LEGACY_VAULTS ? env.LOCKWATCH_LEGACY_VAULTS.split(",").map((x) => x.trim()).filter(Boolean) as Address[] : ADDRESSES[chainId].lockwatchVaultsLegacy)

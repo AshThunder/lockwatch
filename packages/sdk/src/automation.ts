@@ -17,6 +17,15 @@ export const EXTEND_PRESETS = {
   fourWeeksAt7d: { triggerWithin: 7 * DAY, duration: 4 * WEEK },
 } as const satisfies Record<string, ExtendPolicy>;
 
+/** veMEZO (4-year max lock). Same vault arithmetic, longer horizon. */
+export const MEZO_MAX_LOCK_SECONDS = 4 * 365 * DAY;
+export const EXTEND_PRESETS_MEZO = {
+  /** Keep at 4 years: re-extend weekly so boost weight never decays. */
+  max: { triggerWithin: MEZO_MAX_LOCK_SECONDS - 1, duration: 0 },
+  /** Add a year once fewer than 30 days remain. */
+  yearAt30d: { triggerWithin: 30 * DAY, duration: 52 * WEEK },
+} as const satisfies Record<string, ExtendPolicy>;
+
 /** End the vault would set right now (weekly-rounded); same arithmetic as veBTC. */
 export const extendTarget = (now: number, p: ExtendPolicy, maxLock = MAX_LOCK_SECONDS) =>
   Math.floor((now + (p.duration === 0 ? maxLock : p.duration)) / WEEK) * WEEK;

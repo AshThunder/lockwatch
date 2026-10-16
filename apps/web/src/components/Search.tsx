@@ -27,7 +27,7 @@ export function GlobalSearch({ big = false, autoFocus = false }: { big?: boolean
       const h: Hit = await (await fetch(`/api/search?q=${encodeURIComponent(q)}`)).json();
       if (h.kind === "none") setMsg(h.reason ?? "Nothing matched.");
       else if (h.kind === "lock" && !h.found) setMsg(`Lock #${h.id} isn't indexed on this network.`);
-      else if (h.kind === "address" && !h.found) setMsg("No veBTC locks or MUSD loan for that wallet.");
+      else if (h.kind === "address" && !h.found) setMsg("No veBTC or veMEZO locks or MUSD loan for that wallet.");
       else { router.push(h.kind === "address" && !h.locks && h.trove ? h.href!.replace("/dashboard", "/radar") : h.href!); setQ(""); input.current?.blur(); }
     } catch { setMsg("Search is unavailable. Try again in a moment."); }
     finally { setBusy(false); }

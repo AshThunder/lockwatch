@@ -69,7 +69,7 @@ contract MockVoter {
         require(ve.isApprovedOrOwner(msg.sender, id), "NotApprovedOrOwner");
         for (uint256 i; i < b.length; ++i) MockReward(b[i]).getReward(id, t[i]);
     }
-    function claimFees(address[] memory f, address[][] memory t, uint256 id) external {
+    function claimFees(address[] memory f, address[][] memory t, uint256 id) external virtual {
         require(ve.isApprovedOrOwner(msg.sender, id), "NotApprovedOrOwner");
         for (uint256 i; i < f.length; ++i) MockReward(f[i]).getReward(id, t[i]);
     }
@@ -135,6 +135,7 @@ contract MockVeBTC {
     function voting(uint256 id, bool b) external { require(msg.sender == voter, "voter"); voted[id] = b; }
     function setPermanent(uint256 id, bool b) external { _locked[id].isPermanent = b; }
     function setEscrowType(uint256 id, uint8 t) external { escrowType[id] = t; }
+    function setMaxLockTime(uint256 m) external { maxLockTime = m; }
 
     function transferFrom(address f, address t, uint256 id) external {
         require(isApprovedOrOwner(msg.sender, id) && _owner[id] == f, "auth");
@@ -285,4 +286,9 @@ contract MockSMUSD {
     function setReverts(bool b) external { reverts = b; }
     function deposit(uint256 a) external { require(!reverts, "paused"); musd.transferFrom(msg.sender, address(this), a); balanceOf[msg.sender] += a; }
     function transfer(address t, uint256 v) external returns (bool) { balanceOf[msg.sender] -= v; balanceOf[t] += v; return true; }
+}
+
+/// @notice tigris BoostVoter (veMEZO): bribes only, no gaugeToFees/claimFees. Calling them reverts.
+contract MockBoostVoter is MockVoter {
+    function claimFees(address[] memory, address[][] memory, uint256) external pure override { revert("no fees"); }
 }
