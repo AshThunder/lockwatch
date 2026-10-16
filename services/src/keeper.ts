@@ -2,7 +2,7 @@ import { ADDRESSES, lockwatchVaultAbi, hintHelpersAbi, sortedTrovesAbi, inBurstW
 import * as repo from "@lockwatch/db";
 import type { Db } from "@lockwatch/db";
 import { createWalletClient, http, parseEventLogs, zeroAddress, formatEther, type Address, type PublicClient } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { keeperWallet, serial } from "./signer";
 import { loadConfig, publicClientFor, log, allVaults, type Config } from "./config";
 import { extendTick, rewardsTick, rescueTick, rebaseTick, viemExtendChain, viemRewardsChain, viemRescueChain, viemRebaseChain, type ExtendChain, type RewardsChain, type RescueChain, type RebaseChain } from "./automation";
 import { sleep } from "./indexer";
@@ -85,8 +85,7 @@ export async function keeperTick(db: Db, chain: KeeperChain, chainId: number, no
 export function viemKeeperChain(client: PublicClient, cfg: Config, vaultOverride?: Address): KeeperChain {
   if (!cfg.vault && !vaultOverride) throw new Error("LOCKWATCH_VAULT not set");
   if (!cfg.keeperKey) throw new Error("KEEPER_PRIVATE_KEY not set");
-  const account = privateKeyToAccount(cfg.keeperKey);
-  const wallet = createWalletClient({ account, chain: chainById(cfg.chainId), transport: http(cfg.rpc) });
+  const { account, wallet } = keeperWallet(cfg.keeperKey, cfg.chainId, cfg.rpc);
   const a = ADDRESSES[cfg.chainId];
   const vault = (vaultOverride ?? cfg.vault)!;
   return {
@@ -121,7 +120,10 @@ export function viemKeeperChain(client: PublicClient, cfg: Config, vaultOverride
 }
 
 /** One full keeper pass over every job: protect (all vaults), auto-extend, reward claims, loan rescue, heartbeat. */
-export async function keeperPass(db: Db, jobs: KeeperJobs, chainId: number, now: number, notify?: Notify) {
+export function keeperPass(db: Db, jobs: KeeperJobs, chainId: number, now: number, notify?: Notify) {
+  return serial(() => pass(db, jobs, chainId, now, notify)); // one pass (and so one tx) at a time across ledgers
+}
+async function pass(db: Db, jobs: KeeperJobs, chainId: number, now: number, notify?: Notify) {
   const out: Record<string, unknown> = {};
   for (const [i, v] of jobs.vaults.entries()) {
     try { out[`protect:${v.address}`] = await keeperTick(db, v.chain, chainId, now, notify, { address: v.address, isDefaultForNull: v.isDefaultForNull }, { checkBalance: i === 0 }); }

@@ -204,7 +204,7 @@ describe("portfolio page", () => {
 describe("keeper page", () => {
   it("shows status, success rate, gas and a filterable tx history", async () => {
     routes["/api/keeper"] = (u: string) => ({ keeper: "0xa5052E50884FB844B624284F481e59B40f8F5F8B", balance: "0.0098", actions: 4, succeeded: 3, successRate: 0.75, uptime24h: 0.99, lastHeartbeat: now - 60, nextRun: now + 240,
-      byJob: { protect: { total: 1, ok: 1 }, extend: { total: 2, ok: 1 }, rewards: { total: 1, ok: 1 }, rescue: { total: 0, ok: 0 } }, page: 1, pages: 1, total: 1,
+      byJob: { protect: { total: 1, ok: 1 }, extend: { total: 2, ok: 1 }, rewards: { total: 1, ok: 1 }, rescue: { total: 0, ok: 0 }, rebase: { total: 3, ok: 2 } }, page: 1, pages: 1, total: 1,
       items: u.includes("job=rescue") ? [] : [{ job: "extend", subject: "380", ok: true, tx: "0x" + "ab".repeat(32), detail: null, ts: now - 100 }] });
     wrap(<Keeper />);
     expect(await screen.findByText("Running")).toBeTruthy();
@@ -212,6 +212,8 @@ describe("keeper page", () => {
     expect(screen.getByText("99%")).toBeTruthy();
     expect(screen.getByText("0.0098 BTC")).toBeTruthy();
     expect(screen.getByText("veBTC #380")).toBeTruthy();
+    const reb = screen.getAllByText("Rebase").find((e) => e.tagName === "SPAN")!;
+    expect(reb.parentElement!.textContent).toBe("Rebase2/3");
     fireEvent.click(screen.getByRole("tab", { name: "Rescue" }));
     await screen.findByText("Nothing here yet");
     expect(calls.some((c) => c.url.includes("job=rescue"))).toBe(true);

@@ -111,6 +111,8 @@ describe("keeper stats", () => {
     expect(s.uptime24h).toBeCloseTo(0.5, 1);
     expect(s.nextRun).toBe(now + 300);
     expect(s.byJob.extend).toEqual({ total: 2, ok: 1 });
+    expect(Object.keys(s.byJob)).toEqual(["protect", "extend", "rewards", "rescue", "rebase"]);
+    expect(keeperStats([{ job: "rebase", ok: true, ts: now }, { job: "rebase", ok: false, ts: now }], now).byJob.rebase).toEqual({ total: 2, ok: 1 });
     expect(keeperStats([], now).successRate).toBeNull();
   });
 });
