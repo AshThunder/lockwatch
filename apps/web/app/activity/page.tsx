@@ -18,6 +18,7 @@ const KIND_TEXT: Record<string, (i: Item, sym: string) => string> = {
   unregistered: () => "Auto-protect switched off by the owner",
   fallback: (i, sym) => `Plan couldn't run (${i.detail ?? "reverted"}). ${sym} sent to the owner instead`,
   retrying: (i) => `Keeper retrying: ${i.detail ?? "unknown error"}`,
+  rebase: (i, sym) => `Weekly rebase claimed${i.amount ? `: ${btc(i.amount, sym === "MEZO" ? 2 : 6)} ${sym}` : ""}. Compounded into the lock, or sent to the owner if it had ended`,
   stuck: (i) => `Keeper stopped after 3 attempts: ${i.detail ?? "unknown error"}`,
 };
 

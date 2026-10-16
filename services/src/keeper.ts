@@ -4,7 +4,7 @@ import type { Db } from "@lockwatch/db";
 import { createWalletClient, http, parseEventLogs, zeroAddress, formatEther, type Address, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { loadConfig, publicClientFor, log, allVaults, type Config } from "./config";
-import { extendTick, rewardsTick, rescueTick, viemExtendChain, viemRewardsChain, viemRescueChain, type ExtendChain, type RewardsChain, type RescueChain } from "./automation";
+import { extendTick, rewardsTick, rescueTick, rebaseTick, viemExtendChain, viemRewardsChain, viemRescueChain, viemRebaseChain, type ExtendChain, type RewardsChain, type RescueChain, type RebaseChain } from "./automation";
 import { sleep } from "./indexer";
 
 /** Chain side of the keeper, injectable for tests. */
@@ -129,6 +129,7 @@ export async function keeperPass(db: Db, jobs: KeeperJobs, chainId: number, now:
   }
   if (jobs.extend) try { out.extend = await extendTick(db, jobs.extend, chainId, now, notify); } catch (e) { log("keeper", "extend error", { err: String(e).slice(0, 300) }); }
   if (jobs.rewards) try { out.rewards = await rewardsTick(db, jobs.rewards, chainId, now, notify); } catch (e) { log("keeper", "rewards error", { err: String(e).slice(0, 300) }); }
+  if (jobs.rebase) try { out.rebase = await rebaseTick(db, jobs.rebase.chain, chainId, now, jobs.rebase.min); } catch (e) { log("keeper", "rebase error", { err: String(e).slice(0, 300) }); }
   if (jobs.rescue) try { out.rescue = await rescueTick(db, jobs.rescue, chainId, now, notify); } catch (e) { log("keeper", "rescue error", { err: String(e).slice(0, 300) }); }
   await repo.logRun(db, { chainId, job: "heartbeat", ok: true, ts: now });
   await repo.pruneHeartbeats(db, chainId, now);
@@ -140,6 +141,7 @@ export interface KeeperJobs {
   extend?: ExtendChain;
   rewards?: RewardsChain;
   rescue?: RescueChain;
+  rebase?: { chain: RebaseChain; min: bigint };
 }
 
 export function viemKeeperJobs(client: PublicClient, cfg: Config): KeeperJobs {
@@ -150,6 +152,7 @@ export function viemKeeperJobs(client: PublicClient, cfg: Config): KeeperJobs {
     extend: cfg.vault ? viemExtendChain(client, cfg) : undefined,
     rewards: cfg.vault ? viemRewardsChain(client, cfg) : undefined,
     rescue: cfg.rescue ? viemRescueChain(client, cfg) : undefined,
+    rebase: cfg.distributor && cfg.keeperKey ? { chain: viemRebaseChain(client, cfg), min: cfg.rebaseMin } : undefined,
   };
 }
 
@@ -157,7 +160,7 @@ export function viemKeeperJobs(client: PublicClient, cfg: Config): KeeperJobs {
 export async function runKeeper(db: Db, cfg = loadConfig(), notify?: Notify, signal?: AbortSignal) {
   const client = publicClientFor(cfg) as PublicClient;
   const jobs = viemKeeperJobs(client, cfg);
-  log("keeper", "jobs", { asset: cfg.asset, vaults: jobs.vaults.map((v) => v.address), extend: !!jobs.extend, rewards: !!jobs.rewards, rescue: !!jobs.rescue });
+  log("keeper", "jobs", { asset: cfg.asset, vaults: jobs.vaults.map((v) => v.address), extend: !!jobs.extend, rewards: !!jobs.rewards, rescue: !!jobs.rescue, rebase: !!jobs.rebase });
   while (!signal?.aborted) {
     const now = Math.floor(Date.now() / 1000);
     try { await keeperPass(db, jobs, cfg.ledger, now, notify); } catch (e) { log("keeper", "error", { err: String(e).slice(0, 300) }); }

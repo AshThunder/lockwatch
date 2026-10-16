@@ -179,20 +179,26 @@ export const attemptById = async (db: Db, chainId: number, id: bigint) =>
   (await db.query<{ attempts: number; last_error: string | null; next_try_at: string | number; dead: boolean }>(
     `SELECT attempts,last_error,next_try_at,dead FROM keeper_attempt WHERE chain_id=$1 AND lock_id=$2`, [chainId, id.toString()]))[0];
 
-export type ActivityKind = "protected" | "fallback" | "registered" | "unregistered" | "retrying" | "stuck";
+export type ActivityKind = "protected" | "fallback" | "registered" | "unregistered" | "retrying" | "stuck" | "rebase";
 export interface ActivityRow { kind: ActivityKind; lock_id: string; owner: string; mode: number; tx_hash: string | null; amount: string | null; new_lock_id: string | null; detail: string | null; ts: number }
 
-/** Keeper and vault activity, newest first: protections (by state) plus keeper retries. */
+/** Keeper and vault activity, newest first: protections (by state), keeper retries, and successful rebase claims
+ *  (keeper_run job='rebase', detail = claimed wei, owner from the lock row). */
 export async function activity(db: Db, chainId: number, opts: { limit?: number; offset?: number; owner?: string; lockId?: bigint } = {}) {
   const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100), offset = Math.max(opts.offset ?? 0, 0);
-  const where: string[] = ["p.chain_id=$1"]; const args: unknown[] = [chainId];
-  if (opts.owner) { args.push(lc(opts.owner)); where.push(`p.owner=$${args.length}`); }
-  if (opts.lockId !== undefined) { args.push(opts.lockId.toString()); where.push(`p.lock_id=$${args.length}`); }
-  const rows = await db.query<{ lock_id: string; owner: string; mode: number; active: boolean; tx_hash: string | null; amount: string | null; new_lock_id: string | null; fallback_reason: string | null; updated_at: string | number; attempts: number | null; last_error: string | null; dead: boolean | null }>(
-    `SELECT p.lock_id,p.owner,p.mode,p.active,p.tx_hash,p.amount,p.new_lock_id,p.fallback_reason,p.updated_at,k.attempts,k.last_error,k.dead
-       FROM protection p LEFT JOIN keeper_attempt k ON k.chain_id=p.chain_id AND k.lock_id=p.lock_id
-      WHERE ${where.join(" AND ")} ORDER BY p.updated_at DESC, p.lock_id DESC LIMIT ${limit + 1} OFFSET ${offset}`, args);
+  const pw: string[] = ["p.chain_id=$1"], rw: string[] = ["r.chain_id=$1", "r.job='rebase'", "r.ok"]; const args: unknown[] = [chainId];
+  if (opts.owner) { args.push(lc(opts.owner)); pw.push(`p.owner=$${args.length}`); rw.push(`l.owner=$${args.length}`); }
+  if (opts.lockId !== undefined) { args.push(opts.lockId.toString()); pw.push(`p.lock_id::text=$${args.length}`); rw.push(`r.subject=$${args.length}`); }
+  const rows = await db.query<{ src: string; lock_id: string; owner: string; mode: number; active: boolean; tx_hash: string | null; amount: string | null; new_lock_id: string | null; fallback_reason: string | null; updated_at: string | number; attempts: number | null; last_error: string | null; dead: boolean | null }>(
+    `SELECT * FROM (
+       SELECT 'p' AS src, p.lock_id::text AS lock_id, p.owner, p.mode, p.active, p.tx_hash, p.amount::text AS amount, p.new_lock_id::text AS new_lock_id, p.fallback_reason, p.updated_at, k.attempts, k.last_error, k.dead
+         FROM protection p LEFT JOIN keeper_attempt k ON k.chain_id=p.chain_id AND k.lock_id=p.lock_id WHERE ${pw.join(" AND ")}
+       UNION ALL
+       SELECT 'r', r.subject, COALESCE(l.owner,''), 0, false, r.tx_hash, r.detail, NULL, NULL, r.ts, NULL, NULL, NULL
+         FROM keeper_run r LEFT JOIN lock l ON l.chain_id=r.chain_id AND l.id::text=r.subject WHERE ${rw.join(" AND ")}
+     ) a ORDER BY updated_at DESC, lock_id DESC LIMIT ${limit + 1} OFFSET ${offset}`, args);
   const items: ActivityRow[] = rows.slice(0, limit).map((r) => {
+    if (r.src === "r") return { kind: "rebase", lock_id: String(r.lock_id), owner: r.owner, mode: 0, tx_hash: r.tx_hash, amount: r.amount && /^\d+$/.test(String(r.amount)) ? String(r.amount) : null, new_lock_id: null, detail: null, ts: Number(r.updated_at) };
     const kind: ActivityKind = r.attempts && r.active ? (r.dead ? "stuck" : "retrying")
       : r.fallback_reason ? "fallback" : !r.active && r.tx_hash ? "protected" : r.active ? "registered" : "unregistered";
     return { kind, lock_id: String(r.lock_id), owner: r.owner, mode: Number(r.mode), tx_hash: r.tx_hash, amount: r.amount && String(r.amount), new_lock_id: r.new_lock_id && String(r.new_lock_id),
@@ -205,7 +211,7 @@ export type LockSort = "amount" | "end" | "id";
 /** Paginated lock explorer. state: expired | live | all. */
 export async function exploreLocks(db: Db, chainId: number, o: { state?: "expired" | "live" | "all"; minBtc?: bigint; sort?: LockSort; dir?: "asc" | "desc"; limit?: number; offset?: number; now?: number; excludeOver?: bigint }) {
   const now_ = o.now ?? now(); const limit = Math.min(Math.max(o.limit ?? 25, 1), 100); const offset = Math.max(o.offset ?? 0, 0);
-  const args: unknown[] = [chainId]; const where = ["chain_id=$1", "NOT withdrawn", "NOT permanent"];
+  const args: unknown[] = [chainId]; const where = ["chain_id=$1", "NOT withdrawn", "NOT permanent", "amount > 0"]; // amount 0 = merged/split-away
   // only bind `now` when a clause uses it (state=all used to send an unused $2, which Postgres rejects)
   if ((o.state ?? "expired") === "expired") { args.push(now_); where.push("lock_end <= $2"); } else if (o.state === "live") { args.push(now_); where.push("lock_end > $2"); }
   if (o.minBtc) { args.push(o.minBtc.toString()); where.push(`amount >= $${args.length}`); }

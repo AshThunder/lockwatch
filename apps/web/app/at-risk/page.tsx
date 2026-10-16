@@ -128,17 +128,17 @@ export default function Explorer() {
         {list.isError ? <State tone="error" title="Couldn't load locks" action={<button className="btn-ghost" onClick={() => list.refetch()}>Try again</button>}>{(list.error as Error).message}</State> : (
           <div className={`transition-opacity ${list.isPlaceholderData ? "opacity-60" : ""}`}>
             <div className="relative overflow-x-auto">
-              <table className="tbl min-w-[40rem]">
+              <table className="tbl w-full sm:min-w-[40rem]">
                 <caption className="sr-only">Locks, sortable</caption>
-                <thead><tr>{th("id", "Lock")}<th>Owner</th>{th("amount", SYM, true)}{th("end", state === "expired" ? "Ended" : "Departs", true)}<th className="text-right">Status</th></tr></thead>
+                <thead><tr>{th("id", "Lock")}<th className="hidden sm:table-cell">Owner</th>{th("amount", SYM, true)}{th("end", state === "expired" ? "Ended" : "Departs", true)}<th className="hidden text-right sm:table-cell">Status</th></tr></thead>
                 <tbody>
                   {list.data?.rows.map((l) => (
                     <tr key={l.id}>
                       <td><LockLink id={l.id} asset={asset} /></td>
-                      <td><ExplorerLink kind="address" id={l.owner}>{short(l.owner)}</ExplorerLink></td>
-                      <td className="num text-right">{btc(l.amount)}</td>
+                      <td className="hidden sm:table-cell"><ExplorerLink kind="address" id={l.owner}>{short(l.owner)}</ExplorerLink></td>
+                      <td className="num whitespace-nowrap text-right">{btc(l.amount, A.decimals)}</td>
                       <td className="num text-right text-mute">{state === "expired" ? `${l.ageDays} d ago` : when(l.end)}</td>
-                      <td className="text-right">{l.voted ? <StatusPill status="voted" /> : <StatusPill status={state === "expired" ? "expired" : "active"} />}</td>
+                      <td className="hidden text-right sm:table-cell">{l.voted ? <StatusPill status="voted" /> : <StatusPill status={state === "expired" ? "expired" : "active"} />}</td>
                     </tr>
                   ))}
                   {!list.data && Array.from({ length: 8 }, (_, i) => <tr key={i}><td colSpan={5}><Skeleton className="h-4 w-full" /></td></tr>)}

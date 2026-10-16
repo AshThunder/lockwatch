@@ -226,3 +226,74 @@ export function viemRescueChain(client: PublicClient, cfg: Config): RescueChain 
     wait: waitFor(client),
   };
 }
+
+// ================================================================ rebase auto-claim (RewardsDistributor, permissionless)
+export interface RebaseChain {
+  /** false while the Splitter hasn't rolled into the current epoch (claim/claimMany revert UpdatePeriod). */
+  ready(): Promise<boolean>;
+  claimable(ids: bigint[]): Promise<bigint[]>;
+  claimMany(ids: bigint[]): Promise<Hash>;
+  wait(hash: Hash): Promise<"success" | "reverted">;
+}
+export const REBASE_BATCH = 25;
+const WEEK_S = 7 * 86400;
+
+/** Once per epoch: claim every rebase at or above `min` for every indexed lock of this escrow. Anyone may call
+ *  RewardsDistributor.claim; the protocol itself compounds into a live lock or pays the owner of an expired one, so
+ *  the keeper only spends gas. A batch that fails estimation is retried per lock so one odd id (e.g. a LOCKED
+ *  managed deposit) can't block the rest. The epoch is marked done after one attempt, so failures never loop gas. */
+export async function rebaseTick(db: Db, chain: RebaseChain, chainId: number, now: number, min: bigint) {
+  const epoch = Math.floor(now / WEEK_S) * WEEK_S;
+  const key = `rebase:${chainId}`;
+  if (Number((await repo.getCursor(db, key)) ?? 0) >= epoch) return { skipped: "done this epoch" };
+  if (!(await chain.ready())) return { skipped: "distributor not updated for this epoch" };
+  const ids = (await repo.liveLocks(db, chainId)).map((r) => BigInt(r.id));
+  const amounts: bigint[] = [];
+  for (let i = 0; i < ids.length; i += 200) amounts.push(...(await chain.claimable(ids.slice(i, i + 200))));
+  const due = ids.map((id, i) => ({ id, amt: amounts[i] ?? 0n })).filter((x) => x.amt >= min);
+  const out: { ids: string[]; ok: boolean; hash?: string; err?: string }[] = [];
+  const record = async (batch: { id: bigint; amt: bigint }[], ok: boolean, hash?: string, err?: string) => {
+    for (const x of batch) await repo.logRun(db, { chainId, job: "rebase", subject: x.id.toString(), ok, txHash: hash, detail: ok ? x.amt.toString() : (err ?? "tx reverted").slice(0, 200), ts: now });
+    out.push({ ids: batch.map((x) => x.id.toString()), ok, hash, err });
+  };
+  const run = async (batch: { id: bigint; amt: bigint }[]): Promise<void> => {
+    try {
+      const hash = await chain.claimMany(batch.map((x) => x.id));
+      await record(batch, (await chain.wait(hash)) === "success", hash);
+    } catch (e) {
+      if (batch.length > 1) { for (const x of batch) await run([x]); return; }
+      await record(batch, false, undefined, String(e));
+    }
+  };
+  for (let i = 0; i < due.length; i += REBASE_BATCH) await run(due.slice(i, i + REBASE_BATCH));
+  await repo.setCursor(db, key, String(epoch));
+  log("keeper", "rebase", { ledger: chainId, candidates: ids.length, due: due.length, batches: out.length, ok: out.filter((o) => o.ok).length });
+  return { due: due.length, batches: out };
+}
+
+const distAbi = parseAbi([
+  "function claimable(uint256) view returns (uint256)",
+  "function claimMany(uint256[]) returns (bool)",
+  "function depositor() view returns (address)",
+]);
+export function viemRebaseChain(client: PublicClient, cfg: Config): RebaseChain {
+  const { account, wallet } = writer(cfg);
+  const dist = cfg.distributor!;
+  return {
+    ready: async () => {
+      const dep = await client.readContract({ address: dist, abi: distAbi, functionName: "depositor" });
+      const ap = await client.readContract({ address: dep, abi: parseAbi(["function activePeriod() view returns (uint256)"]), functionName: "activePeriod" });
+      const ts = (await client.getBlock()).timestamp;
+      return ap >= (ts / 604800n) * 604800n;
+    },
+    claimable: async (ids) => {
+      const rs = await client.multicall({ contracts: ids.map((id) => ({ address: dist, abi: distAbi, functionName: "claimable" as const, args: [id] })) });
+      return rs.map((r) => (r.status === "success" ? (r.result as bigint) : 0n));
+    },
+    claimMany: async (ids) => {
+      const gas = await client.estimateContractGas({ account, address: dist, abi: distAbi, functionName: "claimMany", args: [ids] });
+      return wallet.writeContract({ address: dist, abi: distAbi, functionName: "claimMany", args: [ids], gas: (gas * 13n) / 10n + 20_000n });
+    },
+    wait: waitFor(client),
+  };
+}

@@ -47,7 +47,9 @@ const report: Record<string, unknown> = {};
 const j = (x: unknown) => JSON.parse(JSON.stringify(x, (_, v) => (typeof v === "bigint" ? v.toString() : v)));
 const log = (k: string, v: unknown) => { report[k] = j(v); console.log(k, JSON.stringify(j(v))); };
 async function at(ts: bigint) { await test.setNextBlockTimestamp({ timestamp: ts }); await test.mine({ blocks: 1 }); }
-async function send(c: ReturnType<typeof createWalletClient>, req: any) { const h = await c.writeContract(req); const r = await pub.waitForTransactionReceipt({ hash: h }); if (r.status !== "success") throw new Error(`reverted ${req.functionName}`); return h; }
+// Pad the node's gas estimate: veBTC.createLock on a fork underestimates (63/64 forwarding through the proxy + the
+// BTC emulator's Pusher create), so an unpadded createLock can run out of gas and surface as a bare revert.
+async function send(c: ReturnType<typeof createWalletClient>, req: any) { const est = await pub.estimateContractGas({ ...req, account: c.account }); const h = await c.writeContract({ ...req, gas: (est * 3n) / 2n }); const r = await pub.waitForTransactionReceipt({ hash: h }); if (r.status !== "success") throw new Error(`reverted ${req.functionName}`); return h; }
 
 const ids: bigint[] = [LIVE_ID];
 async function main() {
