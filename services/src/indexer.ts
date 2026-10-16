@@ -10,9 +10,9 @@ import { loadConfig, publicClientFor, log, allVaults, type Config } from "./conf
  *  - incremental: veBTC Transfer/Deposit/Withdraw/Approval + vault events since the cursor block; every touched id
  *    is re-read from chain (state reads are the source of truth, events only say *what* changed)
  */
-export async function readLocks(client: PublicClient, chainId: number, ids: bigint[], vault: Address | null | Address[]) {
+export async function readLocks(client: PublicClient, chainId: number, ids: bigint[], vault: Address | null | Address[], veAddr?: Address) {
   const vset = new Set((Array.isArray(vault) ? vault : vault ? [vault] : []).map((v) => v.toLowerCase()));
-  const ve = ADDRESSES[chainId as 31611].veBTC;
+  const ve = veAddr ?? ADDRESSES[chainId as 31611].veBTC; // chainId here is the DB ledger
   const out: Parameters<typeof repo.upsertLock>[1][] = [];
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100);
@@ -42,15 +42,15 @@ export async function readLocks(client: PublicClient, chainId: number, ids: bigi
 }
 
 export async function fullScan(db: Db, client: PublicClient, cfg: Config) {
-  const ve = ADDRESSES[cfg.chainId].veBTC;
+  const ve = cfg.ve;
   const max = await client.readContract({ address: ve, abi: veBTCAbi, functionName: "tokenId" });
   const ids = Array.from({ length: Number(max) }, (_, i) => BigInt(i + 1));
-  const rows = await readLocks(client, cfg.chainId, ids, allVaults(cfg));
+  const rows = await readLocks(client, cfg.ledger, ids, allVaults(cfg), cfg.ve);
   for (const r of rows) await repo.upsertLock(db, r);
   const live = rows.filter((r) => !r.withdrawn).map((r) => r.id);
   for (const v of allVaults(cfg)) await reconcileProtections(db, client, cfg, live, v);
   if (cfg.vault) await reconcileAutomation(db, client, cfg, live);
-  log("indexer", "full scan", { locks: rows.length, live: rows.filter((r) => !r.withdrawn).length });
+  log("indexer", "full scan", { asset: cfg.asset, locks: rows.length, live: rows.filter((r) => !r.withdrawn).length });
   return rows;
 }
 
@@ -68,8 +68,8 @@ export async function reconcileProtections(db: Db, client: PublicClient, cfg: Co
       const r = res[j];
       if (r.status !== "success" || !r.result) continue;
       const { owner, mode } = r.result;
-      if (owner !== zeroAddress) await repo.upsertProtection(db, { chainId: cfg.chainId, lockId: chunk[j], owner, mode, active: true, vault });
-      else await db.query(`UPDATE protection SET active=false WHERE chain_id=$1 AND lock_id=$2 AND active AND COALESCE(vault,$4)=$3`, [cfg.chainId, chunk[j].toString(), vault.toLowerCase(), v1]);
+      if (owner !== zeroAddress) await repo.upsertProtection(db, { chainId: cfg.ledger, lockId: chunk[j], owner, mode, active: true, vault });
+      else await db.query(`UPDATE protection SET active=false WHERE chain_id=$1 AND lock_id=$2 AND active AND COALESCE(vault,$4)=$3`, [cfg.ledger, chunk[j].toString(), vault.toLowerCase(), v1]);
     }
   }
 }
@@ -90,13 +90,13 @@ export async function reconcileAutomation(db: Db, client: PublicClient, cfg: Con
       const e = res[2 * j], r = res[2 * j + 1];
       if (e.status === "success") {
         const p = e.result as { owner: Address; triggerWithin: number; duration: number };
-        if (p.owner !== zeroAddress) await repo.upsertExtend(db, { chainId: cfg.chainId, lockId: chunk[j], owner: p.owner, triggerWithin: Number(p.triggerWithin), duration: Number(p.duration), active: true });
-        else await repo.setExtendActive(db, cfg.chainId, chunk[j], false);
+        if (p.owner !== zeroAddress) await repo.upsertExtend(db, { chainId: cfg.ledger, lockId: chunk[j], owner: p.owner, triggerWithin: Number(p.triggerWithin), duration: Number(p.duration), active: true });
+        else await repo.setExtendActive(db, cfg.ledger, chunk[j], false);
       }
       if (r.status === "success") {
         const o = r.result as Address;
-        if (o !== zeroAddress) await repo.upsertRewards(db, { chainId: cfg.chainId, lockId: chunk[j], owner: o, enabled: true });
-        else await db.query(`UPDATE rewards_auto SET enabled=false WHERE chain_id=$1 AND lock_id=$2`, [cfg.chainId, chunk[j].toString()]);
+        if (o !== zeroAddress) await repo.upsertRewards(db, { chainId: cfg.ledger, lockId: chunk[j], owner: o, enabled: true });
+        else await db.query(`UPDATE rewards_auto SET enabled=false WHERE chain_id=$1 AND lock_id=$2`, [cfg.ledger, chunk[j].toString()]);
       }
     }
   }
@@ -121,8 +121,8 @@ export async function refreshRescue(db: Db, chainId: number, read: RescueReader,
 }
 
 export async function syncEvents(db: Db, client: PublicClient, cfg: Config, maxRange = 5_000n) {
-  const ve = ADDRESSES[cfg.chainId].veBTC;
-  const key = `events:${cfg.chainId}`;
+  const ve = cfg.ve;
+  const key = `events:${cfg.ledger}`;
   const head = await client.getBlockNumber();
   const from = BigInt((await repo.getCursor(db, key)) ?? (head - 1n).toString()) + 1n;
   if (from > head) return { touched: 0 };
@@ -138,7 +138,7 @@ export async function syncEvents(db: Db, client: PublicClient, cfg: Config, maxR
   for (const v of vaults) {
     const vlogs = logs.filter((l) => l.address.toLowerCase() === v.toLowerCase());
     for (const ev of parseEventLogs({ abi: lockwatchVaultAbi, logs: vlogs })) {
-      await applyVaultEvent(db, cfg.chainId, ev as never, v);
+      await applyVaultEvent(db, cfg.ledger, ev as never, v);
       touched.add((ev.args as { tokenId: bigint }).tokenId);
     }
   }
@@ -149,7 +149,7 @@ export async function syncEvents(db: Db, client: PublicClient, cfg: Config, maxR
     const read = viemRescueReader(client, cfg.rescue);
     for (const [b, tx] of who) await refreshRescue(db, cfg.chainId, read, b as Address, tx);
   }
-  if (touched.size) for (const r of await readLocks(client, cfg.chainId, [...touched], vaults)) await repo.upsertLock(db, r);
+  if (touched.size) for (const r of await readLocks(client, cfg.ledger, [...touched], vaults, cfg.ve)) await repo.upsertLock(db, r);
   await repo.setCursor(db, key, to.toString());
   return { touched: touched.size, from, to };
 }
@@ -211,7 +211,8 @@ export async function runIndexer(db: Db, cfg = loadConfig(), signal?: AbortSigna
       if (Date.now() - lastFull > 6 * 3600_000) {
         const head = await client.getBlockNumber();
         await fullScan(db, client, cfg);
-        if (!(await repo.getCursor(db, `events:${cfg.chainId}`))) await repo.setCursor(db, `events:${cfg.chainId}`, head.toString());
+        if (cfg.asset === "mezo") await snapshotStats(db, cfg.ledger); // veBTC snapshots ride on the radar loop
+        if (!(await repo.getCursor(db, `events:${cfg.ledger}`))) await repo.setCursor(db, `events:${cfg.ledger}`, head.toString());
         lastFull = Date.now();
       }
       // catch up in 5k-block pages until we reach head

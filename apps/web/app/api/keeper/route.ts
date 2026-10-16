@@ -1,7 +1,7 @@
 import * as repo from "@lockwatch/db";
 import { keeperStats, RPC, chainById } from "@lockwatch/sdk";
 import { createPublicClient, http, formatEther } from "viem";
-import { db, json, bad, CHAIN_ID, limited } from "@/server/db";
+import { db, json, bad, CHAIN_ID, limited, LEDGERS } from "@/server/db";
 import { KEEPER } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
@@ -24,10 +24,16 @@ export async function GET(req: Request) {
   if (job && !["protect", "extend", "rewards", "rescue"].includes(job)) return bad("unknown job");
   const d = await db();
   const now = Math.floor(Date.now() / 1000);
-  const [runs, bal] = await Promise.all([repo.keeperRuns(d, CHAIN_ID, { since: now - 30 * 86400 }), balance()]);
+  const asset = sp.get("asset");
+  const [perLedger, bal] = await Promise.all([
+    Promise.all(LEDGERS.map(async (l) => (await repo.keeperRuns(d, l.ledger, { since: now - 30 * 86400 })).map((r) => ({ ...r, asset: l.asset })))),
+    balance(),
+  ]);
+  // uptime/heartbeats come from the veBTC pipeline; actions from both, newest first
+  const runs = perLedger.flat().filter((r) => r.job !== "heartbeat" || r.asset === "btc").sort((a, b) => Number(b.ts) - Number(a.ts) || b.id - a.id);
   const stats = keeperStats(runs.map((r) => ({ job: r.job, ok: r.ok, ts: Number(r.ts) })), now);
-  const actions = runs.filter((r) => r.job !== "heartbeat" && (!job || r.job === job));
-  const items = actions.slice((page - 1) * size, page * size).map((r) => ({ job: r.job, subject: r.subject, ok: r.ok, tx: r.tx_hash, detail: r.detail, ts: Number(r.ts) }));
+  const actions = runs.filter((r) => r.job !== "heartbeat" && (!job || r.job === job) && (!asset || r.asset === asset));
+  const items = actions.slice((page - 1) * size, page * size).map((r) => ({ asset: r.asset, job: r.job, subject: r.subject, ok: r.ok, tx: r.tx_hash, detail: r.detail, ts: Number(r.ts) }));
   return json({ keeper: KEEPER, balance: bal, ...stats, page, pages: Math.max(1, Math.ceil(actions.length / size)), total: actions.length, items, window: "30d" },
     { headers: { "cache-control": "s-maxage=20, stale-while-revalidate=60" } });
 }

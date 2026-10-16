@@ -1,4 +1,4 @@
-import { dueExpiryAlerts, radarRisk, fmt18, pct18, explorerUrl, type ChainId, type LineEntry, NOT_PROTECTABLE_REASONS } from "@lockwatch/sdk";
+import { ledgerId, type Asset, dueExpiryAlerts, radarRisk, fmt18, pct18, explorerUrl, type ChainId, type LineEntry, NOT_PROTECTABLE_REASONS } from "@lockwatch/sdk";
 import * as repo from "@lockwatch/db";
 import type { Db, SubRow } from "@lockwatch/db";
 import type { Address } from "viem";
@@ -22,14 +22,18 @@ export function message(kind: Kind, d: Record<string, string>, cfg: Pick<Config,
 }
 
 function messageBody(kind: Kind, d: Record<string, string>, cfg: Pick<Config, "appUrl" | "chainId">): string {
-  const lock = `<a href="${cfg.appUrl}/lock/${d.lockId}">lock #${d.lockId}</a>`;
+  const mezo = d.asset === "mezo";
+  const sym = mezo ? "MEZO" : "BTC";
+  const q = mezo ? "?asset=mezo" : "";
+  const lock = `<a href="${cfg.appUrl}/lock/${d.lockId}${q}">ve${sym} lock #${d.lockId}</a>`;
+  const protect = `${cfg.appUrl}/protect/${d.lockId}${q}`;
   switch (kind) {
-    case "lock_t7d": return `⏳ Your veBTC ${lock} (${d.amount} BTC) unlocks in under 7 days — ${when(+d.end)}.${d.protected === "1" ? "\n✅ Auto-protect is on." : `\nSet up auto-protect so it doesn't sit unclaimed: ${cfg.appUrl}/protect/${d.lockId}`}`;
-    case "lock_t1d": return `⚠️ ${lock} (${d.amount} BTC) unlocks in under 24h — ${when(+d.end)}.${d.protected === "1" ? "\n✅ Auto-protect is on." : `\nProtect it now: ${cfg.appUrl}/protect/${d.lockId}`}`;
-    case "lock_expired": return `🔓 ${lock} has expired and ${d.amount} BTC is sitting unclaimed.${d.protected === "1" ? "\nThe keeper will claim it for you shortly." : `\nClaim it now or turn on auto-protect: ${cfg.appUrl}/dashboard`}`;
-    case "protected": return `✅ Protected ${lock}: ${d.amount} BTC → ${d.mode}.\n${explorerUrl(cfg.chainId as ChainId, "tx", d.tx)}`;
-    case "fallback": return `↩️ ${lock}: ${d.mode} couldn't complete (${d.reason}), so your BTC was returned to your wallet instead.`;
-    case "protect_failed": return `❌ Auto-protect couldn't run for lock #${d.lockId}: ${d.reason}.\nTap to fix or claim: ${cfg.appUrl}/protect/${d.lockId}`;
+    case "lock_t7d": return `⏳ Your ${lock} (${d.amount} ${sym}) unlocks in under 7 days — ${when(+d.end)}.${d.protected === "1" ? "\n✅ Auto-protect is on." : `\nSet up auto-protect so it doesn't sit unclaimed: ${protect}`}`;
+    case "lock_t1d": return `⚠️ ${lock} (${d.amount} ${sym}) unlocks in under 24h — ${when(+d.end)}.${d.protected === "1" ? "\n✅ Auto-protect is on." : `\nProtect it now: ${protect}`}`;
+    case "lock_expired": return `🔓 ${lock} has expired and ${d.amount} ${sym} is sitting unclaimed.${d.protected === "1" ? "\nThe keeper will claim it for you shortly." : `\nClaim it now or turn on auto-protect: ${cfg.appUrl}/dashboard`}`;
+    case "protected": return `✅ Protected ${lock}: ${d.amount} ${sym} → ${d.mode}.\n${explorerUrl(cfg.chainId as ChainId, "tx", d.tx)}`;
+    case "fallback": return `↩️ ${lock}: ${d.mode} couldn't complete (${d.reason}), so your ${sym} was returned to your wallet instead.`;
+    case "protect_failed": return `❌ Auto-protect couldn't run for ve${sym} lock #${d.lockId}: ${d.reason}.\nTap to fix or claim: ${protect}`;
     case "radar_watch": return `👀 Redemption Radar: your MUSD loan ${short(d.owner)} is #${d.rank} in the redemption line with ${d.ahead} MUSD ahead.\n${cfg.appUrl}/radar`;
     case "radar_danger": return `🚨 Redemption Radar: only ${d.ahead} MUSD of loans sit ahead of yours (#${d.rank}, ICR ${d.icr}). A redemption could swap your BTC for MUSD.\nAdd collateral or repay to move back: ${cfg.appUrl}/radar`;
     case "icr_low": return `🩸 Your loan's collateral ratio is ${d.icr}. Below 110% it can be liquidated.\n${cfg.appUrl}/radar`;
@@ -57,17 +61,22 @@ export async function alertsFor(db: Db, sub: SubRow, chainId: number, now: numbe
 
 async function alertsForAddress(db: Db, address: string, chainId: number, now: number): Promise<[string, Kind, Record<string, string>][]> {
   const out: [string, Kind, Record<string, string>][] = [];
-  const locks = await repo.locksByOwner(db, chainId, address);
-  const prots = await repo.protectionsByOwner(db, chainId, address);
-  const protectedIds = new Set(prots.filter((p) => p.active).map((p) => p.lock_id));
-  for (const l of locks) {
-    for (const k of dueExpiryAlerts({ end: Number(l.lock_end), permanent: l.permanent }, now)) {
-      out.push([`${k}:${chainId}:${l.id}:${l.lock_end}`, k, { lockId: l.id, amount: fmt18(BigInt(l.amount)), end: String(l.lock_end), protected: protectedIds.has(l.id) ? "1" : "0" }]);
+  // veBTC keys keep their original `kind:chainId:id` shape (no re-sends after deploy); veMEZO uses its ledger id.
+  for (const asset of ["btc", "mezo"] as Asset[]) {
+    const lg = ledgerId(chainId, asset);
+    const extra: Record<string, string> = asset === "mezo" ? { asset } : {};
+    const locks = await repo.locksByOwner(db, lg, address);
+    const prots = await repo.protectionsByOwner(db, lg, address);
+    const protectedIds = new Set(prots.filter((p) => p.active).map((p) => p.lock_id));
+    for (const l of locks) {
+      for (const k of dueExpiryAlerts({ end: Number(l.lock_end), permanent: l.permanent }, now)) {
+        out.push([`${k}:${lg}:${l.id}:${l.lock_end}`, k, { lockId: l.id, amount: fmt18(BigInt(l.amount)), end: String(l.lock_end), protected: protectedIds.has(l.id) ? "1" : "0", ...extra }]);
+      }
     }
-  }
-  for (const p of prots) {
-    if (!p.active && p.tx_hash) out.push([`protected:${chainId}:${p.lock_id}`, "protected", { lockId: p.lock_id, amount: fmt18(BigInt(p.amount ?? 0)), mode: MODE_NAMES[p.mode], tx: p.tx_hash }]);
-    if (p.fallback_reason) out.push([`fallback:${chainId}:${p.lock_id}`, "fallback", { lockId: p.lock_id, mode: MODE_NAMES[p.mode], reason: p.fallback_reason.startsWith("0x") ? "the call reverted" : p.fallback_reason }]);
+    for (const p of prots) {
+      if (!p.active && p.tx_hash) out.push([`protected:${lg}:${p.lock_id}`, "protected", { lockId: p.lock_id, amount: fmt18(BigInt(p.amount ?? 0)), mode: MODE_NAMES[p.mode], tx: p.tx_hash, ...extra }]);
+      if (p.fallback_reason) out.push([`fallback:${lg}:${p.lock_id}`, "fallback", { lockId: p.lock_id, mode: MODE_NAMES[p.mode], reason: p.fallback_reason.startsWith("0x") ? "the call reverted" : p.fallback_reason, ...extra }]);
+    }
   }
   const t = await repo.troveOf(db, chainId, address);
   if (t) {
@@ -102,12 +111,13 @@ export async function alertsTick(db: Db, channels: Record<"telegram" | "email", 
 
 /** Direct notice used by the keeper (failures, low balance). */
 export function keeperNotifier(db: Db, channels: Record<"telegram" | "email", Channel>, cfg: Config) {
-  return async (owner: string, kind: NotifyKind, data: Record<string, string>) => {
+  return async (owner: string, kind: NotifyKind, data0: Record<string, string>) => {
+    const data = cfg.asset === "mezo" ? { ...data0, asset: "mezo" } : data0;
     if (kind === "keeper_low_balance") {
       if (cfg.adminChatId) await channels.telegram.send(cfg.adminChatId, `🔋 Keeper balance low: ${data.balance} BTC`);
       return;
     }
-    const key = kind === "protect_failed" ? `protect_failed:${cfg.chainId}:${data.lockId}:${data.reason}` : `${kind}:${cfg.chainId}:${data.tx}`;
+    const key = kind === "protect_failed" ? `protect_failed:${cfg.ledger}:${data.lockId}:${data.reason}` : `${kind}:${cfg.ledger}:${data.tx}`;
     for (const s of await repo.subsByAddress(db, owner)) {
       if (!s.verified || !s.target || s.prefs?.[kind] === false || s.prefs?.muted) continue;
       if (await repo.claimAlert(db, s.id, key, kind)) await channels[s.channel].send(s.target, message(kind, data, cfg));
@@ -121,19 +131,23 @@ export async function handleTelegram(db: Db, tg: Channel, chatId: string, text: 
   const sub = await repo.subByTarget(db, "telegram", chatId);
   switch (cmd.split("@")[0]) {
     case "/start": {
-      if (!arg) return tg.send(chatId, `👋 Lockwatch watches your veBTC locks and MUSD loans on Mezo.\nConnect from ${cfg.appUrl}/alerts to link this chat.`);
+      if (!arg) return tg.send(chatId, `👋 Lockwatch watches your veBTC and veMEZO locks and MUSD loans on Mezo.\nConnect from ${cfg.appUrl}/alerts to link this chat.`);
       const v = await repo.verifySub(db, arg, chatId);
       return tg.send(chatId, v ? `✅ Linked to ${short(v.address)}. You'll get lock expiry, auto-protect and Redemption Radar alerts here.\nCommands: /locks /radar /mute` : "That link has expired. Generate a new one in the app.");
     }
     case "/locks": {
       if (!sub) return tg.send(chatId, `Link your wallet first: ${cfg.appUrl}/alerts`);
-      const locks = await repo.locksByOwner(db, cfg.chainId, sub.address);
-      if (!locks.length) return tg.send(chatId, "No veBTC locks found for your wallet.");
+      const rows: string[] = [];
       const now = Date.now() / 1000;
-      return tg.send(chatId, locks.map((l) => {
-        const left = Number(l.lock_end) - now;
-        return `#${l.id} · ${fmt18(BigInt(l.amount))} BTC · ${left <= 0 ? "🔓 expired" : `${Math.ceil(left / 86400)}d left`}${l.voted ? " · voted" : ""}`;
-      }).join("\n"));
+      for (const asset of ["btc", "mezo"] as Asset[]) {
+        const sym = asset === "mezo" ? "MEZO" : "BTC";
+        for (const l of await repo.locksByOwner(db, ledgerId(cfg.chainId, asset), sub.address)) {
+          const left = Number(l.lock_end) - now;
+          rows.push(`ve${sym} #${l.id} · ${fmt18(BigInt(l.amount))} ${sym} · ${left <= 0 ? "🔓 expired" : `${Math.ceil(left / 86400)}d left`}${l.voted ? " · voted" : ""}`);
+        }
+      }
+      if (!rows.length) return tg.send(chatId, "No veBTC or veMEZO locks found for your wallet.");
+      return tg.send(chatId, rows.join("\n"));
     }
     case "/radar": {
       if (!sub) return tg.send(chatId, `Link your wallet first: ${cfg.appUrl}/alerts`);

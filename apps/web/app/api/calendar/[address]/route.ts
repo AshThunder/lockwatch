@@ -1,6 +1,6 @@
 import * as repo from "@lockwatch/db";
 import { buildIcs } from "@lockwatch/sdk";
-import { db, bad, CHAIN_ID, limited } from "@/server/db";
+import { db, bad, limited, LEDGERS } from "@/server/db";
 import { MODES } from "@/lib/modes";
 
 export const dynamic = "force-dynamic";
@@ -12,11 +12,17 @@ export async function GET(req: Request, { params }: { params: { address: string 
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return bad("bad address");
   const d = await db();
   const now = Math.floor(Date.now() / 1000);
-  const [locks, prots] = await Promise.all([repo.locksByOwner(d, CHAIN_ID, address), repo.protectionsByOwner(d, CHAIN_ID, address)]);
-  const pm = new Map(prots.filter((p) => p.active).map((p) => [p.lock_id, p]));
-  const upcoming = locks.filter((l) => !l.permanent && Number(l.lock_end) > now);
+  // one feed for both veBTC and veMEZO unlocks
+  const events = (await Promise.all(LEDGERS.map(async ({ asset, ledger }) => {
+    const [locks, prots] = await Promise.all([repo.locksByOwner(d, ledger, address), repo.protectionsByOwner(d, ledger, address)]);
+    const pm = new Map(prots.filter((p) => p.active).map((p) => [String(p.lock_id), p]));
+    return locks.filter((l) => !l.permanent && Number(l.lock_end) > now).map((l) => ({
+      id: String(l.id), amount: String(l.amount), end: Number(l.lock_end), voted: l.voted, asset,
+      protectedMode: pm.has(String(l.id)) ? MODES[pm.get(String(l.id))!.mode].replace("BTC", asset === "mezo" ? "MEZO" : "BTC") : null,
+    }));
+  }))).flat().sort((a, b) => a.end - b.end);
   const app = process.env.APP_URL ?? new URL(req.url).origin;
-  const ics = buildIcs(address, upcoming.map((l) => ({ id: String(l.id), amount: String(l.amount), end: Number(l.lock_end), voted: l.voted, protectedMode: pm.has(String(l.id)) ? MODES[pm.get(String(l.id))!.mode] : null })), app, now);
+  const ics = buildIcs(address, events, app, now);
   return new Response(ics, {
     headers: {
       "content-type": "text/calendar; charset=utf-8",

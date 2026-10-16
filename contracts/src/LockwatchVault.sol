@@ -7,7 +7,9 @@ import {IERC20Min, IVeBTC, IVoter, IBorrowerOperationsSignatures, ISavingsMUSD} 
 /// @notice v2 adds auto-extend (keeper calls veBTC.increaseUnlockTime as the approved operator so voting
 ///         power never lapses) and reward auto-claim (keeper calls Voter.claimBribes/claimFees for registered
 ///         gauges; the reward contracts pay `ownerOf(tokenId)` directly, so the vault never touches rewards).
-/// @notice Permissionless auto-protection for expired veBTC locks on Mezo.
+/// @notice Permissionless auto-protection for expired vote-escrow locks on Mezo (veBTC and veMEZO).
+///         One instance per escrow: the veMEZO instance is deployed with bos/musd/smusd = 0, so only RETURN
+///         (MEZO back to the owner) and RELOCK are available; `btc` then holds the MEZO token (ve.token()).
 ///         A lock owner approves this contract on one tokenId and records what should happen at expiry.
 ///         After expiry anyone (a keeper) can call `protect`, which clears votes, withdraws the BTC and
 ///         immediately returns it to the owner, re-locks it in the owner's name, or opens an MUSD trove
@@ -203,14 +205,15 @@ contract LockwatchVault {
         uint256 n = gauges.length;
         if (bribeTokens.length != n || feeTokens.length != n) revert LengthMismatch();
         address[] memory bribes = new address[](n);
-        address[] memory fees = new address[](n);
+        bool anyFees;
         for (uint256 i; i < n; ++i) {
             if (!voter.isGauge(gauges[i])) revert NotGauge(gauges[i]);
             bribes[i] = voter.gaugeToBribe(gauges[i]);
-            fees[i] = voter.gaugeToFees(gauges[i]);
+            if (feeTokens[i].length != 0) anyFees = true;
         }
         voter.claimBribes(bribes, bribeTokens, tokenId);
-        voter.claimFees(fees, feeTokens, tokenId);
+        // veMEZO's BoostVoter has bribes only (no gaugeToFees/claimFees): keepers pass empty fee token lists.
+        if (anyFees) _claimFees(tokenId, gauges, feeTokens);
         emit RewardsClaimed(tokenId, o, n);
     }
 
@@ -295,6 +298,14 @@ contract LockwatchVault {
         target = ((block.timestamp + (e.duration == 0 ? maxLock : e.duration)) / WEEK) * WEEK;
         if (target <= end) return (false, NO_GAIN, end, target);
         return (true, OK, end, target);
+    }
+
+    function _claimFees(uint256 tokenId, address[] calldata gauges, address[][] calldata feeTokens) internal {
+        address[] memory fees = new address[](gauges.length);
+        for (uint256 i; i < gauges.length; ++i) {
+            fees[i] = voter.gaugeToFees(gauges[i]);
+        }
+        voter.claimFees(fees, feeTokens, tokenId);
     }
 
     function _protect(uint256 tokenId, address upperHint, address lowerHint)
@@ -401,6 +412,7 @@ contract LockwatchVault {
         if (p.mode == Mode.RELOCK) {
             if (p.relockDuration == 0) revert InvalidPref();
         } else if (p.mode == Mode.MUSD || p.mode == Mode.MUSD_SAVINGS) {
+            if (address(bos) == address(0)) revert InvalidPref(); // veMEZO instance: no MUSD flows
             if (p.debt == 0 || p.sig.length == 0 || p.deadline <= block.timestamp) revert InvalidPref();
             if (p.mode == Mode.MUSD_SAVINGS && address(smusd) == address(0)) revert InvalidPref();
         }

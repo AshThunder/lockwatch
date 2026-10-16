@@ -1,21 +1,26 @@
 <p align="center"><img src="apps/web/public/favicon.svg" width="72" /></p>
 <h1 align="center">Lockwatch</h1>
 <p align="center"><b>NEVER MISS AN UNLOCK.<br/>NEVER LEAVE BTC IDLE.</b></p>
-<p align="center">Expiry protection for veBTC locks on Mezo: alerts before a lock ends, a keeper that acts the moment it does, and a Redemption Radar for MUSD borrowers.</p>
+<p align="center">Expiry protection for <b>veBTC and veMEZO</b> locks on Mezo: alerts before a lock ends, a keeper that acts the moment it does, and a Redemption Radar for MUSD borrowers.</p>
 <p align="center"><a href="https://lockwatch.vercel.app"><b>Live demo: lockwatch.vercel.app</b></a> · Telegram: <a href="https://t.me/Lockwatch_bot">@Lockwatch_bot</a> · Mezo testnet (chain 31611)</p>
 
 ![Lockwatch home](docs/screenshots/home-desktop.png)
 
+## Built on MEZO and MUSD
+- **veMEZO, first-class.** Every veMEZO lock is indexed alongside veBTC. Its own vault instance ([0x24fd…27ae](https://explorer.test.mezo.org/address/0x24fd63DE4274c71B51cA08adEd519B6cC72f27ae), verified) returns MEZO to the owner at expiry or re-locks it for up to 4 years. Auto-extend keeps boost weight at the 4-year max, and reward auto-claim collects BoostVoter bribes. The UI has a veBTC / veMEZO switch on every lock view, with MEZO totals kept separate from BTC.
+- **MUSD.** Expired veBTC can open an MUSD loan in the owner's name, Loan Rescue defends MUSD troves, and the Redemption Radar shows each borrower's place in the redemption queue.
+
 ## The problem
 Every veBTC lock on Mezo ends on a Thursday at 00:00 UTC, and holders forget. An ended lock stops earning and stops voting, and its BTC sits idle until the owner remembers to come back and claim it.
 
-The evidence is onchain. We scanned every veBTC id on Mezo testnet (1–379, Oct 15 2026): **286 locks were expired and unclaimed, holding 873.58 testnet BTC**, effectively the whole veBTC supply. Nobody is watching those positions. Expired positions are also the ones attackers look for: an Oct 5, 2026 incident on Mezo involved expired locks.
+The evidence is onchain. We scanned every veBTC id on Mezo testnet (1–379, Oct 15 2026): **286 locks were expired and unclaimed, holding 873.58 testnet BTC**, effectively the whole veBTC supply. veMEZO has the same problem: of 920 veMEZO ids, **129 locks are expired and unclaimed, holding 80,500 testnet MEZO** (scan Oct 16 2026). Nobody is watching those positions. Expired positions are also the ones attackers look for: an Oct 5, 2026 incident on Mezo involved expired locks.
 
 Borrowers have a matching blind spot. MUSD redemptions hit the lowest-collateral troves first, and a borrower can't easily see where they are in that line.
 
 ## What Lockwatch does
 | Feature | What it does |
 |---|---|
+| 🟦 **veMEZO support** | The same guard for veMEZO: index, alerts, at-risk explorer, auto-protect (MEZO back to you or re-locked up to 4 years), auto-extend to the 4-year max, BoostVoter bribe auto-claim, calendar, watchlist and portfolio. MUSD outcomes stay BTC-only. |
 | ⏳ **Expiry Guard + auto-protect** | Watch every lock you own with a live countdown. Approve one lock and pick an outcome. At expiry a permissionless keeper resets votes and withdraws, then **returns the BTC to you, re-locks it in your name, or opens an MUSD loan in your name**. If anything fails, the BTC goes back to you. The vault never holds BTC after a transaction. |
 | 🔁 **Auto-extend** | Keep a lock alive forever: when it gets within your chosen window of expiry, the keeper extends it by your chosen duration. |
 | 🎁 **Reward auto-claim** | The keeper claims voting rewards for opted-in locks and sends them to the owner. |
@@ -83,6 +88,8 @@ flowchart LR
 | LockwatchRescue | [0x4408e3348584d37a4412B0BeEF71a3e97Fd32f64](https://explorer.test.mezo.org/address/0x4408e3348584d37a4412B0BeEF71a3e97Fd32f64) |
 | LockwatchRescue (superseded, pre-CEI fix) | [0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e](https://explorer.test.mezo.org/address/0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e) |
 | LockwatchVault v1 (still serves lock #380) | [0xD7160697f3ACd0191e65bcccaAFeaa0913D21999](https://explorer.test.mezo.org/address/0xD7160697f3ACd0191e65bcccaAFeaa0913D21999) |
+| LockwatchVault (veMEZO instance: RETURN / RELOCK, 4-year max) | [0x24fd63DE4274c71B51cA08adEd519B6cC72f27ae](https://explorer.test.mezo.org/address/0x24fd63DE4274c71B51cA08adEd519B6cC72f27ae) |
+| veMEZO (Mezo) | [0xaCE816CA2bcc9b12C59799dcC5A959Fb9b98111b](https://explorer.test.mezo.org/address/0xaCE816CA2bcc9b12C59799dcC5A959Fb9b98111b) |
 | veBTC (Mezo) | [0xB63fcCd03521Cf21907627bd7fA465C129479231](https://explorer.test.mezo.org/address/0xB63fcCd03521Cf21907627bd7fA465C129479231) |
 
 ## Proof: real testnet transactions
@@ -101,15 +108,15 @@ Also verified live on lockwatch.vercel.app with real wallet signatures: calendar
 ## Testing
 | Suite | Tests |
 |---|---|
-| Contracts (Foundry: unit, fuzz, invariant, gas-griefing) | 65 |
-| Contracts, fork tests against live Mezo testnet | 10 |
-| Services (indexer, keeper, alerts) | 26 |
-| Web (API routes, UI, mobile nav, gas padding) | 37 |
-| SDK | 24 |
-| DB | 12 |
-| **Total** | **174, all passing** |
+| Contracts (Foundry: unit, fuzz, invariant, gas-griefing, veMEZO instance) | 78 |
+| Contracts, fork tests against live Mezo testnet (veBTC + real VeMEZO/BoostVoter) | 15 |
+| Services (indexer, keeper, alerts, both ledgers) | 34 |
+| Web (API routes, UI, mobile nav, gas padding, asset switch) | 48 |
+| SDK | 30 |
+| DB | 13 |
+| **Total** | **218, all passing** |
 
-Plus `services/scripts/fork-e2e.ts` (full keeper flow on a fork of testnet) and `services/scripts/live-e2e.ts` (real transactions above).
+Plus `services/scripts/fork-e2e.ts` (full keeper flow on a fork of testnet), `services/scripts/fork-e2e-mezo.ts` (production indexer + keeper on the veMEZO ledger against the deployed veMEZO vault: auto-extend to ~4 years, then 2,500 MEZO returned to the owner at expiry) and `services/scripts/live-e2e.ts` (real transactions above).
 
 ```bash
 pnpm test                 # all TS suites
@@ -127,14 +134,17 @@ pnpm --filter ./services start            # indexer + keeper + alerts
 Requires Node 20+, pnpm, Postgres, and Foundry for contracts.
 
 ### Environment variables (names only)
-- **Web:** `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_LOCKWATCH_VAULT`, `NEXT_PUBLIC_LOCKWATCH_RESCUE`, `NEXT_PUBLIC_KEEPER_ADDRESS`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, `NEXT_PUBLIC_TELEGRAM_BOT`, `DATABASE_URL`, `SIWE_DOMAIN`, `APP_URL`, `KEEPER_BALANCE_RPC`, `TYPICAL_REDEMPTION_MUSD`
-- **Worker:** `DATABASE_URL`, `RPC_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_MODE`, `TELEGRAM_WEBHOOK_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL`, `PORT`, `KEEPER_PRIVATE_KEY`
+- **Web:** `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_LOCKWATCH_VAULT`, `NEXT_PUBLIC_LOCKWATCH_VAULT_MEZO`, `NEXT_PUBLIC_LOCKWATCH_RESCUE`, `NEXT_PUBLIC_KEEPER_ADDRESS`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, `NEXT_PUBLIC_TELEGRAM_BOT`, `DATABASE_URL`, `SIWE_DOMAIN`, `APP_URL`, `KEEPER_BALANCE_RPC`, `TYPICAL_REDEMPTION_MUSD`
+- **Worker:** `DATABASE_URL`, `RPC_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_MODE`, `TELEGRAM_WEBHOOK_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL`, `PORT`, `KEEPER_PRIVATE_KEY`, `LOCKWATCH_VAULT_MEZO` (optional override)
 
 ## Honest limitations
 - **Loan rescue triggers on collateral ratio only.** It does not yet react to redemption-queue position; the Radar shows that, but rescue doesn't act on it.
 - **No sMUSD savings vault on testnet.** The "MUSD → savings" outcome is mainnet-only; on testnet the MUSD outcome stops at opening the loan.
 - **One vault approval per lock.** veBTC allows one approved address per lock, so approving a lock for Vault v2 replaces its approval for the old vault (lock #380 stays on v1 for that reason).
 - Loan rescue and a live expiry withdrawal are proven in fork tests; the live run didn't trigger them because no test trove fell below its line and no lock had yet expired.
+
+- **veMEZO keeper action is proven on a fork, not live.** Testnet MEZO has no public faucet (the Mezo faucet is captcha-gated and gives BTC), so no team wallet holds MEZO for a live lock. The deployed veMEZO vault is exercised on an anvil fork of testnet by the production keeper code.
+- **Vault v2 (veBTC) runs the previous vault revision.** The current source only makes fee claims optional and rejects MUSD modes when no MUSD wiring exists; veBTC behaviour is unchanged, so v2 was not redeployed.
 
 ## License
 Apache-2.0

@@ -157,10 +157,10 @@ export function viemKeeperJobs(client: PublicClient, cfg: Config): KeeperJobs {
 export async function runKeeper(db: Db, cfg = loadConfig(), notify?: Notify, signal?: AbortSignal) {
   const client = publicClientFor(cfg) as PublicClient;
   const jobs = viemKeeperJobs(client, cfg);
-  log("keeper", "jobs", { vaults: jobs.vaults.map((v) => v.address), extend: !!jobs.extend, rewards: !!jobs.rewards, rescue: !!jobs.rescue });
+  log("keeper", "jobs", { asset: cfg.asset, vaults: jobs.vaults.map((v) => v.address), extend: !!jobs.extend, rewards: !!jobs.rewards, rescue: !!jobs.rescue });
   while (!signal?.aborted) {
     const now = Math.floor(Date.now() / 1000);
-    try { await keeperPass(db, jobs, cfg.chainId, now, notify); } catch (e) { log("keeper", "error", { err: String(e).slice(0, 300) }); }
+    try { await keeperPass(db, jobs, cfg.ledger, now, notify); } catch (e) { log("keeper", "error", { err: String(e).slice(0, 300) }); }
     await sleep(inBurstWindow(now) ? 30_000 : 5 * 60_000, signal);
   }
 }

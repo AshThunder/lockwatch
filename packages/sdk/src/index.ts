@@ -9,3 +9,4 @@ export { lockwatchRescueAbi } from "./abi/LockwatchRescue";
 export * from "./calendar";
 export * from "./automation";
 export * from "./chains";
+export * from "./assets";

@@ -205,8 +205,9 @@ export type LockSort = "amount" | "end" | "id";
 /** Paginated lock explorer. state: expired | live | all. */
 export async function exploreLocks(db: Db, chainId: number, o: { state?: "expired" | "live" | "all"; minBtc?: bigint; sort?: LockSort; dir?: "asc" | "desc"; limit?: number; offset?: number; now?: number; excludeOver?: bigint }) {
   const now_ = o.now ?? now(); const limit = Math.min(Math.max(o.limit ?? 25, 1), 100); const offset = Math.max(o.offset ?? 0, 0);
-  const args: unknown[] = [chainId, now_]; const where = ["chain_id=$1", "NOT withdrawn", "NOT permanent"];
-  if ((o.state ?? "expired") === "expired") where.push("lock_end <= $2"); else if (o.state === "live") where.push("lock_end > $2");
+  const args: unknown[] = [chainId]; const where = ["chain_id=$1", "NOT withdrawn", "NOT permanent"];
+  // only bind `now` when a clause uses it (state=all used to send an unused $2, which Postgres rejects)
+  if ((o.state ?? "expired") === "expired") { args.push(now_); where.push("lock_end <= $2"); } else if (o.state === "live") { args.push(now_); where.push("lock_end > $2"); }
   if (o.minBtc) { args.push(o.minBtc.toString()); where.push(`amount >= $${args.length}`); }
   if (o.excludeOver) { args.push(o.excludeOver.toString()); where.push(`amount < $${args.length}`); }
   const col = { amount: "amount", end: "lock_end", id: "id" }[o.sort ?? "amount"]; const dir = o.dir === "asc" ? "ASC" : "DESC";

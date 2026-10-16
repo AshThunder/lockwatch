@@ -60,7 +60,7 @@ function Hero({ risk }: { risk?: AtRisk }) {
           </h1>
           <div data-hero-sub>
             <p className="mt-7 max-w-[33rem] text-lg leading-relaxed text-mute">
-              Every veBTC lock ends on a Thursday. Lockwatch alerts you before yours does, keeps its voting power topped up, claims its rewards, and when it ends, claims, re-locks or borrows MUSD against it for you.
+              Every veBTC and veMEZO lock ends on a Thursday. Lockwatch alerts you before yours does, keeps its voting power topped up, claims its rewards, and when it ends, claims, re-locks or borrows MUSD against it for you.
             </p>
             <div className="mt-7 max-w-[33rem]"><GlobalSearch big /></div>
             <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
@@ -114,7 +114,7 @@ function Problem({ risk }: { risk?: AtRisk }) {
   const total = risk ? toBtc(risk.expiredBtc) : 0;
   const out = risk?.top[0] && total ? toBtc(risk.top[0].amount) : 0;
   const beats = [
-    ["Thursday, 00:00 UTC", "Every veBTC lock on Mezo ends on the same weekly boundary. For much of the world that is the middle of the night."],
+    ["Thursday, 00:00 UTC", "Every veBTC and veMEZO lock on Mezo ends on the same weekly boundary. For much of the world that is the middle of the night."],
     ["Nobody is watching", "Lock lengths top out around four weeks, so the reminder comes around fast and is easy to miss."],
     ["The BTC sits idle", "An ended lock stops earning gauge incentives and stops voting. The BTC just waits, unprotected, until its owner claims it."],
   ];
@@ -301,7 +301,8 @@ function Radar() {
 /* ------------------------------------------------------------------ FAQ */
 const FAQ: [string, React.ReactNode][] = [
   ["Does Lockwatch ever hold my BTC?", "Only inside the single transaction that claims your lock. In that same transaction it is sent to your wallet, re-locked in your name, or used as collateral for a loan in your name. The vault has no balance between transactions and no way to withdraw."],
-  ["What do I approve?", "A standard veBTC approval on one lock ID. It does not cover your other locks or any tokens, and you can revoke it or switch the plan off at any time before the lock ends."],
+  ["Does it cover veMEZO?", "Yes. veMEZO locks get the same alerts, auto-extend (up to Mezo's 4-year maximum), boost-incentive auto-claim and end-of-lock claim or re-lock, through a separate vault instance. Claimed MEZO always goes back to the lock's owner; MUSD loans stay BTC-only."],
+  ["What do I approve?", "A standard veBTC or veMEZO approval on one lock ID. It does not cover your other locks or any tokens, and you can revoke it or switch the plan off at any time before the lock ends."],
   ["Why do unclaimed locks matter?", <>An ended lock earns nothing and votes for nothing until it is claimed, and BTC that nobody is watching is a target. Mezo saw that in an incident on Oct 5, 2026. Lockwatch keeps ended locks from sitting at all, and its vault does not use the gasless relay path involved there.</>],
   ["What happens to locks that have votes?", "Mezo lets votes be reset one hour after the Thursday boundary. The keeper waits for that window, clears the votes through the vault, then claims."],
   ["Who runs the keeper, and what if it goes down?", "Lockwatch runs one, but claiming through the vault is permissionless: anyone can trigger it, and the result is the same. You can also always claim the lock yourself."],
@@ -350,7 +351,7 @@ function SiteFooter() {
       <div className="mx-auto grid max-w-[80rem] gap-10 px-5 py-14 text-sm md:grid-cols-[1.5fr_1fr_1fr_1fr] md:px-8">
         <div>
           <Wordmark className="h-6 text-paper" />
-          <p className="mt-4 max-w-xs leading-relaxed text-mute">Alerts and auto-protect for veBTC locks, and Redemption Radar for MUSD loans. Built for Mezo.</p>
+          <p className="mt-4 max-w-xs leading-relaxed text-mute">Alerts and auto-protect for veBTC and veMEZO locks, and Redemption Radar for MUSD loans. Built for Mezo.</p>
         </div>
         {[
           ["Product", [["/dashboard", "My locks"], ["/at-risk", "Lock explorer"], ["/radar", "Redemption Radar"], ["/alerts", "Alerts"]]],

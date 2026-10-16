@@ -20,6 +20,11 @@ export interface MezoAddresses {
   lockwatchVaultsLegacy: Hex[]; // older vaults the keeper still serves (existing registrations keep working)
   lockwatchRescue: Hex | null; // loan rescue escrow
   veBTCDeployBlock: bigint;
+  // veMEZO (vote-escrowed MEZO, same tigris VotingEscrow, 4-year max, BoostVoter = bribes only)
+  mezo: Hex;
+  veMEZO: Hex;
+  veMEZOVoter: Hex; // BoostVoter
+  lockwatchVaultMezo: Hex | null; // LockwatchVault instance bound to veMEZO (RETURN/RELOCK only)
 }
 
 export const ADDRESSES: Record<ChainId, MezoAddresses> = {
@@ -40,6 +45,10 @@ export const ADDRESSES: Record<ChainId, MezoAddresses> = {
     lockwatchVaultsLegacy: ["0xD7160697f3ACd0191e65bcccaAFeaa0913D21999"],
     lockwatchRescue: "0x4408e3348584d37a4412B0BeEF71a3e97Fd32f64",
     veBTCDeployBlock: 0n,
+    mezo: "0x7B7c000000000000000000000000000000000001",
+    veMEZO: "0xaCE816CA2bcc9b12C59799dcC5A959Fb9b98111b",
+    veMEZOVoter: "0x21d7bDF5a5929AD179F8cA0c9014A0B62ae6Bfd1",
+    lockwatchVaultMezo: "0x24fd63DE4274c71B51cA08adEd519B6cC72f27ae",
   },
   [MEZO_MAINNET]: {
     veBTC: "0x7D807e9CE1ef73048FEe9A4214e75e894ea25914",
@@ -58,6 +67,10 @@ export const ADDRESSES: Record<ChainId, MezoAddresses> = {
     lockwatchVaultsLegacy: [],
     lockwatchRescue: null,
     veBTCDeployBlock: 0n,
+    mezo: "0x7B7c000000000000000000000000000000000001",
+    veMEZO: "0xb90fdAd3DFD180458D62Cc6acedc983D78E20122",
+    veMEZOVoter: "0x0000000000000000000000000000000000000000", // read veMEZO.voter() before mainnet launch
+    lockwatchVaultMezo: null,
   },
 };
 

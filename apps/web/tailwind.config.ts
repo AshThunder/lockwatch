@@ -10,6 +10,8 @@ export default {
         paper: "#F1EEE6", mute: "#A9ADAB", faint: "#82888C",
         btc: "#F7931A", "btc-hi": "#FFA53D", "btc-ink": "#1A0F02",
         signal: "#F2C14E", ok: "#62C68E", bad: "#F2705F",
+        // veMEZO lamp: a cool steel blue so MEZO never reads as BTC orange or a status colour
+        mezo: "#8DB6E8", "mezo-ink": "#07111C",
       },
       fontFamily: {
         display: ["var(--font-display)", "ui-sans-serif", "sans-serif"],

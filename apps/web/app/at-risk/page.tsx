@@ -7,6 +7,8 @@ import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, Toolti
 import { fetcher, btc, short } from "@/lib/format";
 import { ExplorerLink, PageHead, Skeleton, when, State, Pager, LockLink, StatusPill } from "@/components/ui";
 import { Icon } from "@/components/Icon";
+import { AssetSwitch } from "@/components/Asset";
+import { useAsset, assetCfg, withAsset } from "@/lib/asset";
 
 type R = { expiredCount: number; expiredBtc: string; owners: number; totalLocks: number; upcoming: { end: number; count: number; btc: string }[]; top: { id: string; owner: string; amount: string; ageDays: number }[] };
 type Row = { id: string; owner: string; amount: string; end: number; voted: boolean; ageDays: number };
@@ -17,17 +19,21 @@ const AGES: [string, number][] = [["Under 1 week", 3], ["1 to 4 weeks", 10], ["1
 
 export default function Explorer() {
   const router = useRouter();
-  const summary = useQuery({ queryKey: ["at-risk"], queryFn: () => fetcher<R>("/api/at-risk") });
+  const [asset, setAsset] = useAsset();
+  const A = assetCfg(asset);
+  const SYM = A.symbol;
+  const summary = useQuery({ queryKey: ["at-risk", asset], queryFn: () => fetcher<R>(`/api/at-risk?asset=${asset}`) });
   const [state, setState] = useState<"expired" | "live">("expired");
   const [sort, setSort] = useState<"amount" | "end" | "id">("amount");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [minBtc, setMin] = useState(0);
   const [outliers, setOut] = useState<"show" | "hide">("hide");
   const [page, setPage] = useState(1);
-  useEffect(() => setPage(1), [state, sort, dir, minBtc, outliers]);
-  const qs = `state=${state}&sort=${sort}&dir=${dir}&minBtc=${minBtc}&outliers=${outliers}&page=${page}&size=20`;
+  useEffect(() => setPage(1), [state, sort, dir, minBtc, outliers, asset]);
+  useEffect(() => setMin(0), [asset]);
+  const qs = `asset=${asset}&state=${state}&sort=${sort}&dir=${dir}&minBtc=${minBtc}&outliers=${outliers}&page=${page}&size=20`;
   const list = useQuery({ queryKey: ["explore", qs], queryFn: () => fetcher<E>(`/api/explore?${qs}`), placeholderData: keepPreviousData });
-  const chart = useQuery({ queryKey: ["explore-chart", state, outliers, minBtc], queryFn: () => fetcher<E>(`/api/explore?state=${state}&outliers=${outliers}&minBtc=${minBtc}&size=100`) });
+  const chart = useQuery({ queryKey: ["explore-chart", asset, state, outliers, minBtc], queryFn: () => fetcher<E>(`/api/explore?asset=${asset}&state=${state}&outliers=${outliers}&minBtc=${minBtc}&size=100`) });
 
   const s = summary.data;
   const total = s ? toBtc(s.expiredBtc) : 0;
@@ -46,14 +52,14 @@ export default function Explorer() {
 
   return (
     <div className="space-y-10">
-      <PageHead title="Lock explorer">Every veBTC lock on Mezo testnet that has ended and was never claimed, plus what departs next. Click any lock for its timetable.</PageHead>
+      <PageHead title="Lock explorer" aside={<AssetSwitch value={asset} onChange={setAsset} />}>Every {A.ve} lock on Mezo testnet that has ended and was never claimed, plus what departs next. BTC and MEZO are counted separately. Click any lock for its timetable.</PageHead>
 
       <dl className="grid grid-cols-2 overflow-hidden rounded-lg border border-line bg-panel md:grid-cols-4 [&>div]:px-5 [&>div]:md:px-6">
         {[
-          ["BTC idle", s ? <span className="text-btc">{btc(s.expiredBtc, 2)}</span> : null, "In ended, unclaimed locks"],
+          [`${SYM} idle`, s ? <span className={asset === "mezo" ? "text-mezo" : "text-btc"}>{btc(s.expiredBtc, 2)}</span> : null, "In ended, unclaimed locks"],
           ["Ended locks", s?.expiredCount, s && `of ${s.totalLocks} indexed`],
           ["Wallets", s?.owners, "Own at least one"],
-          ["Without the outlier", s ? rest.toFixed(2) : null, outlier ? `BTC across ${s!.expiredCount - 1} locks` : "No single outlier"],
+          ["Without the outlier", s ? rest.toFixed(2) : null, outlier ? `${SYM} across ${s!.expiredCount - 1} locks` : "No single outlier"],
         ].map(([l, v, sub], i) => (
           <div key={l as string} className={`py-5 ${i % 2 ? "border-l border-line" : ""} ${i > 1 ? "border-t border-line md:border-t-0" : ""} ${i === 2 ? "md:border-l" : ""}`}>
             <dt className="label">{l as string}</dt><dd className="num mt-1.5 text-2xl font-medium md:text-[1.75rem]">{v ?? <Skeleton className="h-7 w-20" />}</dd><dd className="mt-1 text-xs text-faint">{sub as string}</dd>
@@ -67,12 +73,12 @@ export default function Explorer() {
             <h2 id="outlier" className="font-display text-xl font-bold uppercase">One lock holds {(toBtc(outlier.amount) / total * 100).toFixed(1)}% of it</h2>
             <span className="text-sm text-mute">{outliers === "hide" ? "Hidden from the chart and table below so it doesn't flatten them." : "Shown in the chart and table."} <button className="link" onClick={() => setOut(outliers === "hide" ? "show" : "hide")}>{outliers === "hide" ? "Include it" : "Hide it"}</button></span>
           </div>
-          <div className="mt-4 flex h-9 overflow-hidden rounded-[4px]" role="img" aria-label={`Lock ${outlier.id}: ${btc(outlier.amount, 1)} BTC; all other ended locks: ${rest.toFixed(2)} BTC`}>
-            <div className="flex items-center bg-[#9C4027] px-3 font-mono text-xs text-paper" style={{ flex: toBtc(outlier.amount) }}>#{outlier.id} · {btc(outlier.amount, 1)} BTC</div>
+          <div className="mt-4 flex h-9 overflow-hidden rounded-[4px]" role="img" aria-label={`Lock ${outlier.id}: ${btc(outlier.amount, 1)} ${SYM}; all other ended locks: ${rest.toFixed(2)} ${SYM}`}>
+            <div className="flex items-center bg-[#9C4027] px-3 font-mono text-xs text-paper" style={{ flex: toBtc(outlier.amount) }}>#{outlier.id} · {btc(outlier.amount, 1)} {SYM}</div>
             <div className="min-w-[8px] bg-btc" style={{ flex: Math.max(rest, total * 0.008) }} />
           </div>
           <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-mute">
-            <span>Lock <LockLink id={outlier.id} /></span><span>Owner <ExplorerLink kind="address" id={outlier.owner} /></span><span>Idle for <span className="num text-paper">{outlier.ageDays} days</span></span>
+            <span>Lock <LockLink id={outlier.id} asset={asset} /></span><span>Owner <ExplorerLink kind="address" id={outlier.owner} /></span><span>Idle for <span className="num text-paper">{outlier.ageDays} days</span></span>
           </div>
         </section>
       )}
@@ -85,11 +91,11 @@ export default function Explorer() {
           </div>
           <label className="text-sm"><span className="label mb-1.5 block">Minimum size</span>
             <select value={minBtc} onChange={(e) => setMin(+e.target.value)} className="field h-10 min-h-[40px] w-40">
-              {[0, 0.001, 0.01, 0.1, 1].map((v) => <option key={v} value={v}>{v ? `${v} BTC or more` : "Any size"}</option>)}
+              {(asset === "mezo" ? [0, 1, 100, 1000, 10000] : [0, 0.001, 0.01, 0.1, 1]).map((v) => <option key={v} value={v}>{v ? `${v.toLocaleString()} ${SYM} or more` : "Any size"}</option>)}
             </select>
           </label>
           {state === "expired" && <label className="flex min-h-[40px] cursor-pointer items-center gap-2.5 text-sm"><input type="checkbox" checked={outliers === "hide"} onChange={(e) => setOut(e.target.checked ? "hide" : "show")} className="h-4 w-4 accent-btc" />Hide the outlier</label>}
-          <span className="ml-auto text-sm text-mute" aria-live="polite">{list.data ? <><span className="num text-paper">{list.data.total}</span> locks · <span className="num text-paper">{btc(list.data.totalAmount, 3)}</span> BTC</> : null}</span>
+          <span className="ml-auto text-sm text-mute" aria-live="polite">{list.data ? <><span className="num text-paper">{list.data.total}</span> locks · <span className="num text-paper">{btc(list.data.totalAmount, 3)}</span> {SYM}</> : null}</span>
         </div>
 
         <div className="rounded-lg border border-line bg-panel p-4 md:p-6">
@@ -107,9 +113,9 @@ export default function Explorer() {
                   <ZAxis range={[40, 40]} />
                   <Tooltip cursor={{ stroke: "#2C3238" }} content={({ payload }) => {
                     const p = payload?.[0]?.payload as (typeof pts)[number] | undefined;
-                    return p ? <div className="rounded border border-line bg-raised px-3 py-2 text-xs shadow-pop"><div className="num text-paper">#{p.id} · {p.y.toFixed(p.y < 1 ? 4 : 2)} BTC</div><div className="mt-0.5 text-mute">{state === "expired" ? `Idle ${p.age} days` : `Departs in ${Math.ceil(p.x)} days`} · {short(p.owner)}</div><div className="mt-1 text-faint">Click to open</div></div> : null;
+                    return p ? <div className="rounded border border-line bg-raised px-3 py-2 text-xs shadow-pop"><div className="num text-paper">#{p.id} · {p.y.toFixed(p.y < 1 ? 4 : 2)} {SYM}</div><div className="mt-0.5 text-mute">{state === "expired" ? `Idle ${p.age} days` : `Departs in ${Math.ceil(p.x)} days`} · {short(p.owner)}</div><div className="mt-1 text-faint">Click to open</div></div> : null;
                   }} />
-                  <Scatter data={pts} onClick={(p: { id?: string; payload?: { id: string } }) => router.push(`/lock/${p.payload?.id ?? p.id}`)} className="cursor-pointer">
+                  <Scatter data={pts} onClick={(p: { id?: string; payload?: { id: string } }) => router.push(withAsset(`/lock/${p.payload?.id ?? p.id}`, asset))} className="cursor-pointer">
                     {pts.map((p) => <Cell key={p.id} fill={state === "expired" ? ageTone(p.age) : "#62C68E"} fillOpacity={0.85} stroke="#0E1012" />)}
                   </Scatter>
                 </ScatterChart>
@@ -124,11 +130,11 @@ export default function Explorer() {
             <div className="relative overflow-x-auto">
               <table className="tbl min-w-[40rem]">
                 <caption className="sr-only">Locks, sortable</caption>
-                <thead><tr>{th("id", "Lock")}<th>Owner</th>{th("amount", "BTC", true)}{th("end", state === "expired" ? "Ended" : "Departs", true)}<th className="text-right">Status</th></tr></thead>
+                <thead><tr>{th("id", "Lock")}<th>Owner</th>{th("amount", SYM, true)}{th("end", state === "expired" ? "Ended" : "Departs", true)}<th className="text-right">Status</th></tr></thead>
                 <tbody>
                   {list.data?.rows.map((l) => (
                     <tr key={l.id}>
-                      <td><LockLink id={l.id} /></td>
+                      <td><LockLink id={l.id} asset={asset} /></td>
                       <td><ExplorerLink kind="address" id={l.owner}>{short(l.owner)}</ExplorerLink></td>
                       <td className="num text-right">{btc(l.amount)}</td>
                       <td className="num text-right text-mute">{state === "expired" ? `${l.ageDays} d ago` : when(l.end)}</td>
@@ -149,7 +155,7 @@ export default function Explorer() {
         <h2 id="up" className="font-display text-2xl font-bold uppercase">Departing next</h2>
         <ul className="mt-4 border-t border-line">
           {(s?.upcoming ?? []).slice(0, 5).map((u) => (
-            <li key={u.end} className="flex items-baseline justify-between gap-4 border-b border-hair py-3.5 text-sm"><span className="num">{when(u.end)}</span><span className="num text-mute">{u.count} lock{u.count > 1 ? "s" : ""} · <span className="text-paper">{btc(u.btc)} BTC</span></span></li>
+            <li key={u.end} className="flex items-baseline justify-between gap-4 border-b border-hair py-3.5 text-sm"><span className="num">{when(u.end)}</span><span className="num text-mute">{u.count} lock{u.count > 1 ? "s" : ""} · <span className="text-paper">{btc(u.btc)} {SYM}</span></span></li>
           ))}
           {s && s.upcoming.length === 0 && <li className="py-4 text-sm text-mute">No live locks depart in the next 30 days.</li>}
           {!s && <li className="py-4"><Skeleton className="h-4 w-full" /></li>}

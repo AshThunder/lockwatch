@@ -83,8 +83,8 @@ export function ExplorerLink({ kind, id, children, className = "" }: { kind: "tx
     </a>
   );
 }
-export const lockExplorer = (id: string) => `${ADDR.veBTC}/instance/${id}`;
-export const LockLink = ({ id }: { id: string }) => <Link href={`/lock/${id}`} className="num text-paper underline decoration-line underline-offset-[3px] hover:text-btc hover:decoration-btc">#{id}</Link>;
+export const lockExplorer = (id: string, asset?: string) => `${asset === "mezo" ? ADDR.veMEZO : ADDR.veBTC}/instance/${id}`;
+export const LockLink = ({ id, asset }: { id: string; asset?: string }) => <Link href={`/lock/${id}${asset === "mezo" ? "?asset=mezo" : ""}`} className="num text-paper underline decoration-line underline-offset-[3px] hover:text-btc hover:decoration-btc">#{id}</Link>;
 
 const TONE: Record<string, [string, string]> = {
   active: ["text-ok", "On time"], expiring: ["text-signal", "Under 7 days"], critical: ["text-bad", "Under 24 h"], expired: ["text-bad", "Expired"],

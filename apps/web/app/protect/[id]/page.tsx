@@ -5,11 +5,13 @@ import { useAccount, useReadContract, useSignTypedData, useChainId } from "wagmi
 import { useQuery } from "@tanstack/react-query";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { veBTCAbi, lockwatchVaultAbi, bosAbi, openTroveTypedData, Mode, MIN_NET_DEBT, GAS_COMPENSATION, validLockEnds } from "@lockwatch/sdk";
-import { ADDR, VAULT, CHAIN_ID } from "@/lib/env";
+import { ADDR, CHAIN_ID } from "@/lib/env";
 import { btc, usd, fetcher, short } from "@/lib/format";
 import { useNow, Countdown, ExpiryBar, Skeleton, when, PageHead, State } from "@/components/ui";
 import { Icon, Spinner } from "@/components/Icon";
 import { useTx, useToast } from "@/components/feedback";
+import { AssetTag } from "@/components/Asset";
+import { useAsset, assetCfg, withAsset } from "@/lib/asset";
 
 const OUTCOMES = [
   { m: Mode.RETURN, icon: "wallet", t: "Back to my wallet", d: "The BTC lands in the wallet that owns the lock." },
@@ -24,9 +26,13 @@ export default function Protect({ params }: { params: { id: string } }) {
   const chainId = useChainId();
   const now = useNow(5000);
   const toast = useToast();
-  const locked = useReadContract({ address: ADDR.veBTC, abi: veBTCAbi, functionName: "locked", args: [id] });
-  const owner = useReadContract({ address: ADDR.veBTC, abi: veBTCAbi, functionName: "ownerOf", args: [id] });
-  const approved = useReadContract({ address: ADDR.veBTC, abi: veBTCAbi, functionName: "getApproved", args: [id], query: { refetchInterval: 4000 } });
+  const [asset] = useAsset();
+  const A = assetCfg(asset);
+  const VAULT = A.vault; // veBTC or veMEZO LockwatchVault instance
+  const VE = A.veAddr;
+  const locked = useReadContract({ address: VE, abi: veBTCAbi, functionName: "locked", args: [id] });
+  const owner = useReadContract({ address: VE, abi: veBTCAbi, functionName: "ownerOf", args: [id] });
+  const approved = useReadContract({ address: VE, abi: veBTCAbi, functionName: "getApproved", args: [id], query: { refetchInterval: 4000 } });
   const nonce = useReadContract({ address: ADDR.borrowerOperationsSignatures ?? undefined, abi: bosAbi, functionName: "getNonce", args: address ? [address] : undefined, query: { enabled: !!address && !!ADDR.borrowerOperationsSignatures } });
   const price = useQuery({ queryKey: ["price"], queryFn: () => fetcher<{ price: string }>("/api/radar/line?limit=1") });
 
@@ -46,7 +52,8 @@ export default function Protect({ params }: { params: { id: string } }) {
   const end = locked.data ? Number(locked.data.end) : 0;
   const isOwner = !!address && owner.data?.toLowerCase() === address.toLowerCase();
   const isApproved = !!VAULT && approved.data?.toLowerCase() === VAULT.toLowerCase();
-  const musdMode = mode === Mode.MUSD || mode === Mode.MUSD_SAVINGS;
+  const musdMode = A.musdModes && (mode === Mode.MUSD || mode === Mode.MUSD_SAVINGS);
+  const maxWeeks = Math.floor(A.maxLockSec / (7 * 86400));
   const p = BigInt(price.data?.price ?? "0");
   const debtWei = BigInt(debt) * 10n ** 18n;
   const composite = debtWei + GAS_COMPENSATION + debtWei / 200n;
@@ -54,11 +61,11 @@ export default function Protect({ params }: { params: { id: string } }) {
   const maxDebt = p > 0n ? Math.floor(Number((amount * p) / 10n ** 18n / 10n ** 18n) / 1.5) : 0;
   const canBorrow = maxDebt >= 2000;
   const relockSeconds = weeks * 7 * 86400;
-  const ends = validLockEnds(end > now ? end : now);
+  const ends = asset === "mezo" ? [] : validLockEnds(end > now ? end : now);
   const smusdOk = mode !== Mode.MUSD_SAVINGS || !!ADDR.smusd;
   const ended = end > 0 && end <= now;
   const blockers = [
-    !VAULT && "LockwatchVault isn't deployed on this network yet.",
+    !VAULT && `LockwatchVault for ${A.ve} isn't deployed on this network yet.`,
     !!address && !isOwner && "This wallet doesn't own the lock. Switch to the owner's wallet.",
     chainId !== CHAIN_ID && "Switch your wallet to Mezo.",
     ended && "This lock has already ended. Claim it from My locks.",
@@ -82,11 +89,11 @@ export default function Protect({ params }: { params: { id: string } }) {
 
   const ownerAddr = owner.data as string | undefined;
   const to = ownerAddr ? short(ownerAddr) : "the owner";
-  const amt = `${btc(amount)} BTC`;
+  const amt = `${btc(amount, A.decimals)} ${A.symbol}`;
   const at = end ? when(end) : "departure";
   const outcome = {
     [Mode.RETURN]: <>claims <b>{amt}</b> and sends it to <b>{to}</b>, the wallet that owns the lock.</>,
-    [Mode.RELOCK]: <>claims <b>{amt}</b> and locks it again for <b>{weeks} week{weeks > 1 ? "s" : ""}</b>, minting the new lock to <b>{to}</b>.</>,
+    [Mode.RELOCK]: <>claims <b>{amt}</b> and locks it again for <b>{weekLabel(weeks)}</b>, minting the new lock to <b>{to}</b>.</>,
     [Mode.MUSD]: <>claims <b>{amt}</b> and uses it as collateral for a <b>{debt.toLocaleString()} MUSD</b> loan in your name, sending the MUSD to <b>{to}</b>{icr ? <> at about <b>{icr.toFixed(0)}%</b> collateral</> : null}.</>,
     [Mode.MUSD_SAVINGS]: <>claims <b>{amt}</b>, opens a <b>{debt.toLocaleString()} MUSD</b> loan in your name, and deposits the MUSD into sMUSD for <b>{to}</b>.</>,
   }[mode];
@@ -103,9 +110,9 @@ export default function Protect({ params }: { params: { id: string } }) {
   return (
     <div className="mx-auto max-w-[60rem] space-y-10">
       {approve.modal}{reg.modal}
-      <PageHead crumb={<Link href={`/lock/${params.id}`} className="mb-3 inline-flex min-h-[36px] items-center gap-1.5 text-sm text-mute hover:text-paper"><Icon name="back" />Lock #{params.id}</Link>}
-        title={<>Protect lock <span className="num font-sans text-[0.8em] font-medium tracking-normal">#{params.id}</span></>}>
-        Choose what happens the moment this lock ends. You approve one lock only, and you can switch it off any time before then.
+      <PageHead crumb={<Link href={withAsset(`/lock/${params.id}`, asset)} className="mb-3 inline-flex min-h-[36px] items-center gap-1.5 text-sm text-mute hover:text-paper"><Icon name="back" />Lock #{params.id}</Link>}
+        title={<>Protect {A.ve} <span className="num font-sans text-[0.8em] font-medium tracking-normal">#{params.id}</span></>}>
+        <AssetTag asset={asset} className="mb-2" /><br />Choose what happens the moment this lock ends. You approve one lock only, and you can switch it off any time before then.
       </PageHead>
 
       <section className="grid gap-6 rounded-lg border border-line bg-panel p-5 md:grid-cols-[1fr_1.3fr] md:p-6">
@@ -130,16 +137,16 @@ export default function Protect({ params }: { params: { id: string } }) {
       {!address && <State title="Connect the owner's wallet" action={<ConnectButton label="Connect wallet" />}>You can read the plan without a wallet. Approving and confirming need the wallet that owns lock #{params.id}.</State>}
 
       <Step n={1} title="Approve Lockwatch on this lock" done={isApproved}>
-        <p className="text-sm leading-relaxed text-mute">A standard veBTC approval for lock #{params.id} only. The vault can only use it after the lock ends, and only toward its owner.</p>
+        <p className="text-sm leading-relaxed text-mute">A standard {A.ve} approval for lock #{params.id} only. The vault can only use it after the lock ends, and only toward its owner.</p>
         {isApproved ? <p className="mt-4 inline-flex items-center gap-2 text-sm text-ok"><Icon name="check" />Approved for Lockwatch on this lock</p> :
-        <button className="btn-primary mt-4" disabled={!VAULT || !isOwner || approve.busy || ended} onClick={() => VAULT && approve.run({ address: ADDR.veBTC, abi: veBTCAbi, functionName: "approve", args: [VAULT, id] })}>
+        <button className="btn-primary mt-4" disabled={!VAULT || !isOwner || approve.busy || ended} onClick={() => VAULT && approve.run({ address: VE, abi: veBTCAbi, functionName: "approve", args: [VAULT, id] })}>
           {approve.busy ? <><Spinner />Approving</> : "Approve lock"}
         </button>}
       </Step>
 
-      <Step n={2} title="Where should the BTC go?">
+      <Step n={2} title={`Where should the ${A.symbol} go?`}>
         <div className="grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2" role="radiogroup" aria-label="Outcome at departure">
-          {OUTCOMES.map((x) => {
+          {OUTCOMES.filter((x) => A.musdModes || x.m === Mode.RETURN || x.m === Mode.RELOCK).map((x) => {
             const sel = mode === x.m;
             const off = x.m === Mode.MUSD_SAVINGS && !ADDR.smusd;
             return (
@@ -147,16 +154,17 @@ export default function Protect({ params }: { params: { id: string } }) {
                 className={`relative bg-ground p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${sel ? "bg-raised" : "hover:bg-panel"}`}>
                 {sel && <i className="absolute inset-x-0 top-0 h-[3px] bg-btc" aria-hidden="true" />}
                 <div className="flex items-center gap-2.5 font-semibold"><Icon name={x.icon} className={`h-[18px] w-[18px] ${sel ? "text-btc" : "text-faint"}`} />{x.t}{off && <span className="pill ml-auto text-faint">Mainnet</span>}</div>
-                <div className="mt-1.5 pl-[28px] text-sm leading-relaxed text-mute">{x.d}</div>
+                <div className="mt-1.5 pl-[28px] text-sm leading-relaxed text-mute">{x.d.replace(/BTC/g, A.symbol)}</div>
               </button>
             );
           })}
         </div>
         {mode === Mode.RELOCK && (
           <div className="mt-6">
-            <label htmlFor="weeks" className="text-sm">Re-lock for <b className="num">{weeks} week{weeks > 1 ? "s" : ""}</b> <span className="text-mute">(Mezo caps locks at about 4 weeks)</span></label>
-            <input id="weeks" type="range" min={1} max={4} value={weeks} onChange={(e) => setWeeks(+e.target.value)} className="mt-2" />
-            <p className="text-xs text-faint">Valid end dates: {ends.map((e) => when(e)).join(" · ")}</p>
+            <label htmlFor="weeks" className="text-sm">Re-lock for <b className="num">{weekLabel(weeks)}</b> <span className="text-mute">({asset === "mezo" ? "veMEZO locks run up to 4 years" : "Mezo caps locks at about 4 weeks"})</span></label>
+            <input id="weeks" type="range" min={1} max={maxWeeks} value={Math.min(weeks, maxWeeks)} onChange={(e) => setWeeks(+e.target.value)} className="mt-2" />
+            {ends.length > 0 && <p className="text-xs text-faint">Valid end dates: {ends.map((e) => when(e)).join(" · ")}</p>}
+            {asset === "mezo" && <p className="text-xs text-faint">Ends round down to a Thursday 00:00 UTC, like every Mezo lock.</p>}
           </div>
         )}
         {musdMode && (
@@ -184,10 +192,10 @@ export default function Protect({ params }: { params: { id: string } }) {
 
       <Step n={musdMode ? 4 : 3} title="Confirm" done={done}>
         <div className="rounded-md border border-line bg-panel p-5">
-          <div className="label">Where your BTC goes</div>
+          <div className="label">Where your {A.symbol} goes</div>
           <p className="mt-2 text-[1.0625rem] leading-relaxed [&_b]:font-semibold [&_b]:text-btc">On <b>{at}</b>, Lockwatch {outcome}</p>
           <ul className="mt-4 space-y-2 text-sm text-mute">
-            {["Funds, new locks and loans can only go to the lock's owner.", "No admin, no upgrade, no withdraw function. If any step fails, the BTC goes to your wallet.", "Votes are cleared first. Mezo allows this from 01:00 UTC on departure day."].map((t) => <li key={t} className="flex gap-2.5"><Icon name="check" className="mt-0.5 h-4 w-4 text-ok" />{t}</li>)}
+            {["Funds, new locks and loans can only go to the lock's owner.", `No admin, no upgrade, no withdraw function. If any step fails, the ${A.symbol} goes to your wallet.`, "Votes are cleared first. Mezo allows this from 01:00 UTC on departure day."].map((t) => <li key={t} className="flex gap-2.5"><Icon name="check" className="mt-0.5 h-4 w-4 text-ok" />{t}</li>)}
           </ul>
         </div>
         {address && blockers.length > 0 && <ul className="mt-4 space-y-1.5 rounded-md border border-signal/40 bg-signal/[0.06] p-3.5 text-sm text-signal" role="status">{blockers.map((b) => <li key={b} className="flex gap-2"><Icon name="alert" className="mt-0.5 h-4 w-4" />{b}</li>)}</ul>}
@@ -195,12 +203,14 @@ export default function Protect({ params }: { params: { id: string } }) {
           <button className="btn-primary" disabled={!address || blockers.length > 0 || !isApproved || (musdMode && !sig) || reg.busy || done} onClick={register}>
             {reg.busy ? <><Spinner />Confirming</> : done ? <><Icon name="shield" />Protected</> : "Turn on auto-protect"}
           </button>
-          {done && <Link href={`/lock/${params.id}`} className="btn-ghost">View lock</Link>}
+          {done && <Link href={withAsset(`/lock/${params.id}`, asset)} className="btn-ghost">View lock</Link>}
         </div>
       </Step>
     </div>
   );
 }
+
+const weekLabel = (w: number) => (w >= 52 && w % 52 === 0 ? `${w / 52} year${w > 52 ? "s" : ""}` : `${w} week${w > 1 ? "s" : ""}`);
 
 function Step({ n, title, done, children }: { n: number; title: string; done?: boolean; children: React.ReactNode }) {
   return (

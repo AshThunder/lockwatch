@@ -11,7 +11,7 @@ import { useToast } from "@/components/feedback";
 import { Icon, Spinner } from "@/components/Icon";
 import { CalendarExport } from "@/components/Calendar";
 
-type W = { address: string; locks: { id: string; amount: string; end: number; permanent: boolean; status: string; protection: { active: boolean } | null }[]; loan: { icr: string; risk: string } | null };
+type W = { address: string; locks: { asset?: "btc" | "mezo"; id: string; amount: string; end: number; permanent: boolean; status: string; protection: { active: boolean } | null }[]; loan: { icr: string; risk: string } | null };
 const chunk = <T,>(xs: T[], n: number) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 
 export default function Watch() {
@@ -92,12 +92,13 @@ export default function Watch() {
                   const live = d?.locks.filter((l) => !l.permanent && l.status !== "expired" && l.status !== "withdrawn") ?? [];
                   const next = live.reduce<number | null>((m, l) => (m === null || l.end < m ? l.end : m), null);
                   const idle = d?.locks.filter((l) => l.status === "expired").length ?? 0;
-                  const total = d?.locks.reduce((s, l) => s + BigInt(l.amount), 0n) ?? 0n;
+                  const total = d?.locks.filter((l) => l.asset !== "mezo").reduce((s, l) => s + BigInt(l.amount), 0n) ?? 0n;
+                  const totalMezo = d?.locks.filter((l) => l.asset === "mezo").reduce((s, l) => s + BigInt(l.amount), 0n) ?? 0n;
                   const cov = live.filter((l) => l.protection?.active).length;
                   return (
                     <tr key={w.address}>
                       <td><div className="text-paper">{w.label || short(w.address)}</div>{w.label && <div className="num text-xs text-faint">{short(w.address)}</div>}{saved.has(w.address) && <span className="sr-only">saved to account</span>}</td>
-                      <td className="num text-right">{d ? `${btc(total)} BTC` : <Skeleton className="ml-auto h-4 w-16" />}</td>
+                      <td className="num text-right">{d ? <>{btc(total)} BTC{totalMezo > 0n && <div className="text-xs text-mezo">{btc(totalMezo, 2)} MEZO</div>}</> : <Skeleton className="ml-auto h-4 w-16" />}</td>
                       <td>{!d ? "" : next ? <span className="text-paper">{when(next)}</span> : <span className="text-faint">None</span>}{idle > 0 && <div className="text-xs text-signal">{idle} ended, unclaimed</div>}</td>
                       <td className="num">{d ? (live.length ? `${cov}/${live.length}` : "–") : ""}</td>
                       <td>{d?.loan ? <span className={d.loan.risk === "safe" ? "text-mute" : "text-signal"}>{pct(d.loan.icr)}</span> : <span className="text-faint">{d ? "None" : ""}</span>}</td>

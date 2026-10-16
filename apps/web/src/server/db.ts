@@ -1,10 +1,15 @@
 import "server-only";
 import { connect, type Db } from "@lockwatch/db";
+import { ASSETS, ledgerId, parseAsset, type Asset } from "@lockwatch/sdk";
 
 const g = globalThis as unknown as { __lwdb?: Promise<Db> };
 /** DATABASE_URL: postgres://… in production (Railway Postgres), a PGlite dir or "memory" locally. */
 export const db = () => (g.__lwdb ??= connect(process.env.DATABASE_URL ?? "memory"));
 export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 31611) as 31611 | 31612;
+/** ?asset=mezo selects the veMEZO ledger (lock-scoped tables); anything else is veBTC. */
+export const assetOf = (req: Request): Asset => parseAsset(new URL(req.url).searchParams.get("asset"));
+export const ledgerOf = (req: Request) => ledgerId(CHAIN_ID, assetOf(req));
+export const LEDGERS = ASSETS.map((a) => ({ asset: a, ledger: ledgerId(CHAIN_ID, a) }));
 
 export const json = (data: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(data, (_, v) => (typeof v === "bigint" ? v.toString() : v)), {

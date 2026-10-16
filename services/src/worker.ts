@@ -12,17 +12,20 @@ async function main() {
   const db = await repo.connect();
   const ac = new AbortController();
   process.on("SIGTERM", () => ac.abort());
-  const tasks: Promise<unknown>[] = [runIndexer(db, cfg, ac.signal), runRadar(db, cfg, ac.signal), runAlerts(db, cfg, ac.signal)];
+  const mezo = loadConfig(process.env, "mezo");
+  const tasks: Promise<unknown>[] = [runIndexer(db, cfg, ac.signal), runIndexer(db, mezo, ac.signal), runRadar(db, cfg, ac.signal), runAlerts(db, cfg, ac.signal)];
   if (cfg.telegramToken && process.env.TELEGRAM_MODE !== "webhook") tasks.push(runTelegramPolling(db, cfg, ac.signal));
   if (cfg.vault && cfg.keeperKey) tasks.push(runKeeper(db, cfg, keeperNotifier(db, channelsFrom(cfg), cfg), ac.signal));
   else log("worker", "keeper disabled (set LOCKWATCH_VAULT and KEEPER_PRIVATE_KEY)");
+  if (mezo.vault && mezo.keeperKey) tasks.push(runKeeper(db, mezo, keeperNotifier(db, channelsFrom(mezo), mezo), ac.signal));
+  else log("worker", "veMEZO keeper disabled (set LOCKWATCH_VAULT_MEZO and KEEPER_PRIVATE_KEY)");
   createServer(async (req, res) => {
     if (req.url === "/health") {
       const snap = await repo.latestSnapshot(db, cfg.chainId).catch(() => undefined);
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, chainId: cfg.chainId, lastSnapshot: snap?.ts ?? null }));
     } else res.writeHead(404).end();
   }).listen(Number(process.env.PORT ?? 8080));
-  log("worker", "started", { chainId: cfg.chainId, keeper: !!(cfg.vault && cfg.keeperKey), telegram: !!cfg.telegramToken, email: !!cfg.resendKey });
+  log("worker", "started", { chainId: cfg.chainId, mezoVault: mezo.vault, keeper: !!(cfg.vault && cfg.keeperKey), telegram: !!cfg.telegramToken, email: !!cfg.resendKey });
   await Promise.all(tasks);
 }
 main();

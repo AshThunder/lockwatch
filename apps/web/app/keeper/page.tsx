@@ -6,7 +6,7 @@ import { VAULT, RESCUE, LEGACY_VAULTS } from "@/lib/env";
 import { PageHead, State, Skeleton, Stat, ExplorerLink, Pager, when, ago, useNow } from "@/components/ui";
 
 type K = { keeper: string; balance: string | null; actions: number; succeeded: number; successRate: number | null; uptime24h: number; lastHeartbeat: number | null; nextRun: number | null;
-  byJob: Record<string, { total: number; ok: number }>; page: number; pages: number; total: number; items: { job: string; subject: string | null; ok: boolean; tx: string | null; detail: string | null; ts: number }[] };
+  byJob: Record<string, { total: number; ok: number }>; page: number; pages: number; total: number; items: { asset?: "btc" | "mezo"; job: string; subject: string | null; ok: boolean; tx: string | null; detail: string | null; ts: number }[] };
 const JOBS = [{ k: "", t: "All" }, { k: "protect", t: "End-of-lock" }, { k: "extend", t: "Extend" }, { k: "rewards", t: "Rewards" }, { k: "rescue", t: "Rescue" }];
 const JOB_NAME: Record<string, string> = { protect: "End-of-lock", extend: "Extend", rewards: "Rewards", rescue: "Rescue" };
 const LOW = 0.002;
@@ -55,7 +55,7 @@ export default function Keeper() {
                   <tr key={`${r.ts}-${i}`}>
                     <td className="num text-xs text-faint">{when(r.ts)}</td>
                     <td>{JOB_NAME[r.job] ?? r.job}</td>
-                    <td className="num">{r.subject ? (r.subject.startsWith("0x") ? short(r.subject) : `#${r.subject}`) : "–"}</td>
+                    <td className="num">{r.subject ? (r.subject.startsWith("0x") ? short(r.subject) : <a className="hover:text-btc" href={`/lock/${r.subject}${r.asset === "mezo" ? "?asset=mezo" : ""}`}>{r.asset === "mezo" ? "veMEZO" : "veBTC"} #{r.subject}</a>) : "–"}</td>
                     <td>{r.ok ? <span className="text-ok">Done</span> : <span className="text-signal" title={r.detail ?? undefined}>Skipped{r.detail ? `: ${r.detail}` : ""}</span>}</td>
                     <td>{r.tx ? <ExplorerLink kind="tx" id={r.tx}>{short(r.tx)}</ExplorerLink> : <span className="text-faint">–</span>}</td>
                   </tr>))}</tbody>
