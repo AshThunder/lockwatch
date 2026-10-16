@@ -46,7 +46,8 @@ export interface AtRiskSummary {
 
 /** Aggregates the "BTC at risk" map: expired-but-unclaimed locks by age, plus upcoming expiries. */
 export function summarizeAtRisk(locks: LockView[], now: number): AtRiskSummary {
-  const live = locks.filter((l) => !l.withdrawn && !l.permanent);
+  // amount 0 = merged/split-away lock (NFT kept, balance moved): nothing to claim, not at risk
+  const live = locks.filter((l) => !l.withdrawn && !l.permanent && l.amount > 0n);
   const expired = live.filter((l) => l.end <= now);
   const ages: [string, number][] = [["< 1 week", 7 * DAY], ["1–4 weeks", 28 * DAY], ["1–3 months", 90 * DAY], ["> 3 months", Infinity]];
   const buckets = ages.map(([label]) => ({ label, count: 0, btc: 0n }));

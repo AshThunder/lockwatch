@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   const page = Math.max(1, Math.min(10_000, Number(sp.get("page") ?? 1) || 1));
   const size = Math.max(1, Math.min(100, Number(sp.get("size") ?? 20) || 20));
   const job = sp.get("job");
-  if (job && !["protect", "extend", "rewards", "rescue"].includes(job)) return bad("unknown job");
+  if (job && !["protect", "extend", "rewards", "rescue", "rebase"].includes(job)) return bad("unknown job");
   const d = await db();
   const now = Math.floor(Date.now() / 1000);
   const asset = sp.get("asset");

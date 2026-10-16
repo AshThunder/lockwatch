@@ -88,7 +88,7 @@ export const LockLink = ({ id, asset }: { id: string; asset?: string }) => <Link
 
 const TONE: Record<string, [string, string]> = {
   active: ["text-ok", "On time"], expiring: ["text-signal", "Under 7 days"], critical: ["text-bad", "Under 24 h"], expired: ["text-bad", "Expired"],
-  permanent: ["text-mute", "Permanent"], withdrawn: ["text-faint", "Withdrawn"], protected: ["text-btc", "Protected"],
+  permanent: ["text-mute", "Permanent"], withdrawn: ["text-faint", "Withdrawn"], protected: ["text-btc", "Protected"], rebase: ["text-ok", "Rebase claimed"],
   linked: ["text-ok", "Linked"], pending: ["text-signal", "Pending"], safe: ["text-ok", "Safe"], watch: ["text-signal", "Watch"], danger: ["text-bad", "Danger"], liquidatable: ["text-bad", "Liquidatable"],
   registered: ["text-btc", "Protect on"], unregistered: ["text-faint", "Protect off"], fallback: ["text-signal", "Plan B"], retrying: ["text-signal", "Retrying"], stuck: ["text-bad", "Needs attention"],
   voted: ["text-mute", "Voted"],

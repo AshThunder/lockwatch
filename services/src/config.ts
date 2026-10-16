@@ -11,6 +11,8 @@ export interface Config {
   vault: Address | null; // current vault (v2)
   legacyVaults: Address[]; // older vaults the keeper still serves (v1 holds lock #380's registration)
   rescue: Address | null; // LockwatchRescue
+  distributor: Address | null; // RewardsDistributor (rebases) for this escrow
+  rebaseMin: bigint; // dust threshold (wei) below which a rebase is not worth a claim
   appUrl: string;
   telegramToken?: string;
   resendKey?: string;
@@ -27,6 +29,7 @@ export function loadConfig(env = process.env, asset: Asset = "btc"): Config {
   return {
     ...base, asset, ledger: ledgerId(chainId, "mezo"), ve: c.ve, voter: c.voter,
     vault: (env.LOCKWATCH_VAULT_MEZO as Address | undefined) ?? c.vault, legacyVaults: [], rescue: null,
+    distributor: (env.REBASE_DISTRIBUTOR_MEZO as Address | undefined) ?? c.distributor, rebaseMin: BigInt(env.REBASE_MIN_MEZO ?? 10n ** 16n), // 0.01 MEZO
   };
 }
 
@@ -41,6 +44,8 @@ function loadBtc(env: NodeJS.ProcessEnv, chainId: ChainId): Config {
     legacyVaults: (env.LOCKWATCH_LEGACY_VAULTS ? env.LOCKWATCH_LEGACY_VAULTS.split(",").map((x) => x.trim()).filter(Boolean) as Address[] : ADDRESSES[chainId].lockwatchVaultsLegacy)
       .filter((v) => v.toLowerCase() !== ((env.LOCKWATCH_VAULT ?? ADDRESSES[chainId].lockwatchVault ?? "") as string).toLowerCase()),
     rescue: (env.LOCKWATCH_RESCUE as Address | undefined) ?? ADDRESSES[chainId].lockwatchRescue,
+    distributor: (env.REBASE_DISTRIBUTOR as Address | undefined) ?? ADDRESSES[chainId].rebaseDistributor,
+    rebaseMin: BigInt(env.REBASE_MIN_BTC ?? 10n ** 12n), // 0.000001 BTC
     appUrl: env.APP_URL ?? "https://lockwatch.vercel.app",
     telegramToken: env.TELEGRAM_BOT_TOKEN,
     resendKey: env.RESEND_API_KEY,

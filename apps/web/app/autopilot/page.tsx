@@ -56,6 +56,13 @@ export default function Autopilot() {
         Keep each lock's voting power topped up and its rewards claimed, without opening the app every week. The keeper does the work; the lock never leaves your wallet.
       </PageHead>
       <AssetSwitch className="mb-6" value={asset} onChange={setAsset} counts={q.data ? counts : undefined} />
+      <section aria-label="Rebase auto-claim" className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-line bg-panel px-5 py-4">
+        <div className="max-w-prose">
+          <div className="board-label">Rebase auto-claim</div>
+          <p className="mt-1 text-sm text-mute">Every week the keeper claims the rebase each {A.ve} lock earns. Mezo adds it to a running lock, or sends it to your wallet if the lock has ended. No approval needed, and the keeper pays the gas.</p>
+        </div>
+        <span className="pill text-ok" style={{ background: "color-mix(in srgb, currentColor 12%, transparent)" }}>Always on</span>
+      </section>
       {!address ? <State title="Connect a wallet">Autopilot is set per lock, so connect the wallet that holds them.</State>
         : q.isLoading ? <div className="space-y-3">{[0, 1].map((i) => <Skeleton key={i} className="h-40 w-full" />)}</div>
         : q.isError ? <State tone="error" title="Couldn't load your locks">{String(q.error)}</State>

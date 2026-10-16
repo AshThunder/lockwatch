@@ -23,6 +23,7 @@ Borrowers have a matching blind spot. MUSD redemptions hit the lowest-collateral
 | 🟦 **veMEZO support** | The same guard for veMEZO: index, alerts, at-risk explorer, auto-protect (MEZO back to you or re-locked up to 4 years), auto-extend to the 4-year max, BoostVoter bribe auto-claim, calendar, watchlist and portfolio. MUSD outcomes stay BTC-only. |
 | ⏳ **Expiry Guard + auto-protect** | Watch every lock you own with a live countdown. Approve one lock and pick an outcome. At expiry a permissionless keeper resets votes and withdraws, then **returns the BTC to you, re-locks it in your name, or opens an MUSD loan in your name**. If anything fails, the BTC goes back to you. The vault never holds BTC after a transaction. |
 | 🔁 **Auto-extend** | Keep a lock alive forever: when it gets within your chosen window of expiry, the keeper extends it by your chosen duration. |
+| 💸 **Rebase auto-claim** | Weekly rebases from the veBTC and veMEZO RewardsDistributors are claimed for every lock with a balance above a dust threshold, through the permissionless `claim`/`claimMany`. A live lock gets the rebase compounded into it; an expired lock's owner is paid directly. The keeper never touches the funds. Claims show in Activity and on the Keeper page. |
 | 🎁 **Reward auto-claim** | The keeper claims voting rewards for opted-in locks and sends them to the owner. |
 | 🛟 **Loan rescue** | Set a collateral-ratio line on your MUSD trove with a signed rule. If it drops below, the keeper tops up collateral and/or repays from your pre-approved amounts. |
 | 📡 **Redemption Radar** | Borrower-side: your place in the MUSD redemption queue, MUSD ahead of you, "what if X MUSD is redeemed", and the top-up or repayment that moves you back. |
@@ -108,13 +109,13 @@ Also verified live on lockwatch.vercel.app with real wallet signatures: calendar
 ## Testing
 | Suite | Tests |
 |---|---|
-| Contracts (Foundry: unit, fuzz, invariant, gas-griefing, veMEZO instance) | 78 |
-| Contracts, fork tests against live Mezo testnet (veBTC + real VeMEZO/BoostVoter) | 15 |
-| Services (indexer, keeper, alerts, both ledgers) | 34 |
+| Contracts (Foundry: unit, fuzz, invariant, gas-griefing, veMEZO instance) | 73 |
+| Contracts, fork tests against live Mezo testnet (veBTC + real VeMEZO/BoostVoter + veMEZO RewardsDistributor rebase claims) | 17 |
+| Services (indexer, keeper, alerts, both ledgers, rebase auto-claim) | 40 |
 | Web (API routes, UI, mobile nav, gas padding, asset switch) | 48 |
 | SDK | 30 |
 | DB | 13 |
-| **Total** | **218, all passing** |
+| **Total** | **221, all passing** |
 
 Plus `services/scripts/fork-e2e.ts` (full keeper flow on a fork of testnet), `services/scripts/fork-e2e-mezo.ts` (production indexer + keeper on the veMEZO ledger against the deployed veMEZO vault: auto-extend to ~4 years, then 2,500 MEZO returned to the owner at expiry) and `services/scripts/live-e2e.ts` (real transactions above).
 
@@ -135,9 +136,11 @@ Requires Node 20+, pnpm, Postgres, and Foundry for contracts.
 
 ### Environment variables (names only)
 - **Web:** `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_LOCKWATCH_VAULT`, `NEXT_PUBLIC_LOCKWATCH_VAULT_MEZO`, `NEXT_PUBLIC_LOCKWATCH_RESCUE`, `NEXT_PUBLIC_KEEPER_ADDRESS`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, `NEXT_PUBLIC_TELEGRAM_BOT`, `DATABASE_URL`, `SIWE_DOMAIN`, `APP_URL`, `KEEPER_BALANCE_RPC`, `TYPICAL_REDEMPTION_MUSD`
-- **Worker:** `DATABASE_URL`, `RPC_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_MODE`, `TELEGRAM_WEBHOOK_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL`, `PORT`, `KEEPER_PRIVATE_KEY`, `LOCKWATCH_VAULT_MEZO` (optional override)
+- **Worker:** `DATABASE_URL`, `RPC_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_MODE`, `TELEGRAM_WEBHOOK_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL`, `PORT`, `KEEPER_PRIVATE_KEY`, `LOCKWATCH_VAULT_MEZO` (optional override), `REBASE_DISTRIBUTOR`, `REBASE_DISTRIBUTOR_MEZO`, `REBASE_MIN_BTC`, `REBASE_MIN_MEZO` (optional overrides)
 
 ## Honest limitations
+- **veBTC rebases are paused upstream.** The veBTC RewardsDistributor hasn't been funded since Nov 2025, so the keeper finds nothing to claim there. veMEZO rebases are live and get claimed.
+- **Locks of size zero are left out of at-risk counts.** Ids whose balance was merged or split away hold nothing, so they're no longer counted as idle.
 - **Loan rescue triggers on collateral ratio only.** It does not yet react to redemption-queue position; the Radar shows that, but rescue doesn't act on it.
 - **No sMUSD savings vault on testnet.** The "MUSD → savings" outcome is mainnet-only; on testnet the MUSD outcome stops at opening the loan.
 - **One vault approval per lock.** veBTC allows one approved address per lock, so approving a lock for Vault v2 replaces its approval for the old vault (lock #380 stays on v1 for that reason).

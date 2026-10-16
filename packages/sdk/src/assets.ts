@@ -32,6 +32,6 @@ export const parseAsset = (v: unknown): Asset => (v === "mezo" ? "mezo" : "btc")
 export function assetContracts(chainId: ChainId, asset: Asset) {
   const a = ADDRESSES[chainId];
   return asset === "mezo"
-    ? { ve: a.veMEZO, voter: a.veMEZOVoter, token: a.mezo, vault: a.lockwatchVaultMezo, legacyVaults: [] as `0x${string}`[] }
-    : { ve: a.veBTC, voter: a.voter, token: a.btc, vault: a.lockwatchVault, legacyVaults: a.lockwatchVaultsLegacy };
+    ? { ve: a.veMEZO, voter: a.veMEZOVoter, token: a.mezo, vault: a.lockwatchVaultMezo, distributor: a.rebaseDistributorMezo, legacyVaults: [] as `0x${string}`[] }
+    : { ve: a.veBTC, voter: a.voter, token: a.btc, vault: a.lockwatchVault, distributor: a.rebaseDistributor, legacyVaults: a.lockwatchVaultsLegacy };
 }

@@ -25,6 +25,9 @@ export interface MezoAddresses {
   veMEZO: Hex;
   veMEZOVoter: Hex; // BoostVoter
   lockwatchVaultMezo: Hex | null; // LockwatchVault instance bound to veMEZO (RETURN/RELOCK only)
+  /** tigris RewardsDistributor (weekly rebases). claim(tokenId) is permissionless: compounds into a live lock, pays the owner if expired. */
+  rebaseDistributor: Hex | null;
+  rebaseDistributorMezo: Hex | null;
 }
 
 export const ADDRESSES: Record<ChainId, MezoAddresses> = {
@@ -49,6 +52,8 @@ export const ADDRESSES: Record<ChainId, MezoAddresses> = {
     veMEZO: "0xaCE816CA2bcc9b12C59799dcC5A959Fb9b98111b",
     veMEZOVoter: "0x21d7bDF5a5929AD179F8cA0c9014A0B62ae6Bfd1",
     lockwatchVaultMezo: "0x24fd63DE4274c71B51cA08adEd519B6cC72f27ae",
+    rebaseDistributor: "0x10B0E7b3411F4A38ca2F6BB697aA28D607924729",
+    rebaseDistributorMezo: "0x2962E8817ae716019F759d098e2caE658bDcAd04",
   },
   [MEZO_MAINNET]: {
     veBTC: "0x7D807e9CE1ef73048FEe9A4214e75e894ea25914",
@@ -71,6 +76,8 @@ export const ADDRESSES: Record<ChainId, MezoAddresses> = {
     veMEZO: "0xb90fdAd3DFD180458D62Cc6acedc983D78E20122",
     veMEZOVoter: "0x0000000000000000000000000000000000000000", // read veMEZO.voter() before mainnet launch
     lockwatchVaultMezo: null,
+    rebaseDistributor: "0x535E01F948458E0b64F9dB2A01Da6F32E240140f",
+    rebaseDistributorMezo: null, // not published in tigris deployments yet
   },
 };
 
