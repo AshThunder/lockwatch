@@ -80,7 +80,8 @@ flowchart LR
 | Contract | Address |
 |---|---|
 | LockwatchVault v2 | [0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB](https://explorer.test.mezo.org/address/0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB) |
-| LockwatchRescue | [0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e](https://explorer.test.mezo.org/address/0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e) |
+| LockwatchRescue | [0x4408e3348584d37a4412B0BeEF71a3e97Fd32f64](https://explorer.test.mezo.org/address/0x4408e3348584d37a4412B0BeEF71a3e97Fd32f64) |
+| LockwatchRescue (superseded, pre-CEI fix) | [0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e](https://explorer.test.mezo.org/address/0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e) |
 | LockwatchVault v1 (still serves lock #380) | [0xD7160697f3ACd0191e65bcccaAFeaa0913D21999](https://explorer.test.mezo.org/address/0xD7160697f3ACd0191e65bcccaAFeaa0913D21999) |
 | veBTC (Mezo) | [0xB63fcCd03521Cf21907627bd7fA465C129479231](https://explorer.test.mezo.org/address/0xB63fcCd03521Cf21907627bd7fA465C129479231) |
 

@@ -26,7 +26,7 @@ describe("config", () => {
     const c = loadConfig({} as NodeJS.ProcessEnv);
     expect(c.vault).toBe(V2);
     expect(allVaults(c)).toEqual([V2, V1]);
-    expect(c.rescue).toMatch(/^0x30F1/);
+    expect(c.rescue).toMatch(/^0x4408e334/);
     const o = loadConfig({ LOCKWATCH_VAULT: V1 } as never);
     expect(o.legacyVaults).toEqual([]); // never double-serve
   });

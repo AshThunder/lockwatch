@@ -38,7 +38,7 @@ export const ADDRESSES: Record<ChainId, MezoAddresses> = {
     smusd: null,
     lockwatchVault: "0xdd5baB25b65C4697A2e14F47B919B61416A0cAdB",
     lockwatchVaultsLegacy: ["0xD7160697f3ACd0191e65bcccaAFeaa0913D21999"],
-    lockwatchRescue: "0x30F1f216f36E102663BCCE4b49eE18C25bE3D70e",
+    lockwatchRescue: "0x4408e3348584d37a4412B0BeEF71a3e97Fd32f64",
     veBTCDeployBlock: 0n,
   },
   [MEZO_MAINNET]: {
