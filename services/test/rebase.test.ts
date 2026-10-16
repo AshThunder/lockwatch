@@ -57,7 +57,7 @@ describe("rebase auto-claim", () => {
     const n = REBASE_BATCH + 3, claim: Record<string, bigint> = {};
     for (let i = 1; i <= n; i++) { await lock(C, i); claim[String(i)] = E18; }
     const f = fake(claim, { failIds: [2n] });
-    await rebaseTick(db, f.chain, C, THU + 60, 1n);
+    await rebaseTick(db, f.chain, C, THU + 60, 1n, { maxClaims: 1e9, budgetMs: 1e9 });
     expect(f.sent.length).toBe(REBASE_BATCH - 1 + 1); // first batch split into singles minus the bad one, then 1 batch of 3
     expect(f.sent.flat()).not.toContain(2n);
     expect(f.sent.flat().length).toBe(n - 1);

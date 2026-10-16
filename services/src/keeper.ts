@@ -4,7 +4,7 @@ import type { Db } from "@lockwatch/db";
 import { createWalletClient, http, parseEventLogs, zeroAddress, formatEther, type Address, type PublicClient } from "viem";
 import { keeperWallet, serial } from "./signer";
 import { loadConfig, publicClientFor, log, allVaults, type Config } from "./config";
-import { extendTick, rewardsTick, rescueTick, rebaseTick, viemExtendChain, viemRewardsChain, viemRescueChain, viemRebaseChain, type ExtendChain, type RewardsChain, type RescueChain, type RebaseChain } from "./automation";
+import { extendTick, rewardsTick, rescueTick, rebaseTick, viemExtendChain, viemRewardsChain, viemRescueChain, viemRebaseChain, type ExtendChain, type RewardsChain, type RescueChain, type RebaseChain, type RebaseLimits } from "./automation";
 import { sleep } from "./indexer";
 
 /** Chain side of the keeper, injectable for tests. */
@@ -119,7 +119,7 @@ export function viemKeeperChain(client: PublicClient, cfg: Config, vaultOverride
   };
 }
 
-/** One full keeper pass over every job: protect (all vaults), auto-extend, reward claims, loan rescue, heartbeat. */
+/** One full keeper pass: protect (all vaults), auto-extend, reward claims, loan rescue, heartbeat, then bounded rebase claims. */
 export function keeperPass(db: Db, jobs: KeeperJobs, chainId: number, now: number, notify?: Notify) {
   return serial(() => pass(db, jobs, chainId, now, notify)); // one pass (and so one tx) at a time across ledgers
 }
@@ -131,10 +131,11 @@ async function pass(db: Db, jobs: KeeperJobs, chainId: number, now: number, noti
   }
   if (jobs.extend) try { out.extend = await extendTick(db, jobs.extend, chainId, now, notify); } catch (e) { log("keeper", "extend error", { err: String(e).slice(0, 300) }); }
   if (jobs.rewards) try { out.rewards = await rewardsTick(db, jobs.rewards, chainId, now, notify); } catch (e) { log("keeper", "rewards error", { err: String(e).slice(0, 300) }); }
-  if (jobs.rebase) try { out.rebase = await rebaseTick(db, jobs.rebase.chain, chainId, now, jobs.rebase.min); } catch (e) { log("keeper", "rebase error", { err: String(e).slice(0, 300) }); }
   if (jobs.rescue) try { out.rescue = await rescueTick(db, jobs.rescue, chainId, now, notify); } catch (e) { log("keeper", "rescue error", { err: String(e).slice(0, 300) }); }
+  // heartbeat once protection is done, before the (bounded, best-effort) rebase claims
   await repo.logRun(db, { chainId, job: "heartbeat", ok: true, ts: now });
   await repo.pruneHeartbeats(db, chainId, now);
+  if (jobs.rebase) try { out.rebase = await rebaseTick(db, jobs.rebase.chain, chainId, now, jobs.rebase.min, jobs.rebase.limits); } catch (e) { log("keeper", "rebase error", { err: String(e).slice(0, 300) }); }
   return out;
 }
 
@@ -143,7 +144,7 @@ export interface KeeperJobs {
   extend?: ExtendChain;
   rewards?: RewardsChain;
   rescue?: RescueChain;
-  rebase?: { chain: RebaseChain; min: bigint };
+  rebase?: { chain: RebaseChain; min: bigint; limits?: RebaseLimits };
 }
 
 export function viemKeeperJobs(client: PublicClient, cfg: Config): KeeperJobs {
@@ -154,7 +155,7 @@ export function viemKeeperJobs(client: PublicClient, cfg: Config): KeeperJobs {
     extend: cfg.vault ? viemExtendChain(client, cfg) : undefined,
     rewards: cfg.vault ? viemRewardsChain(client, cfg) : undefined,
     rescue: cfg.rescue ? viemRescueChain(client, cfg) : undefined,
-    rebase: cfg.distributor && cfg.keeperKey ? { chain: viemRebaseChain(client, cfg), min: cfg.rebaseMin } : undefined,
+    rebase: cfg.distributor && cfg.keeperKey ? { chain: viemRebaseChain(client, cfg), min: cfg.rebaseMin, limits: { maxClaims: cfg.rebaseMaxClaims, budgetMs: cfg.rebaseBudgetMs } } : undefined,
   };
 }
 
