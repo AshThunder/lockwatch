@@ -13,6 +13,8 @@ export interface Config {
   rescue: Address | null; // LockwatchRescue
   distributor: Address | null; // RewardsDistributor (rebases) for this escrow
   rebaseMin: bigint; // dust threshold (wei) below which a rebase is not worth a claim
+  rebaseMaxClaims: number; // claim txs per keeper pass (REBASE_MAX_PER_RUN)
+  rebaseBudgetMs: number; // wall-clock budget per pass for rebase claims (REBASE_BUDGET_MS)
   appUrl: string;
   telegramToken?: string;
   resendKey?: string;
@@ -29,7 +31,7 @@ export function loadConfig(env = process.env, asset: Asset = "btc"): Config {
   return {
     ...base, asset, ledger: ledgerId(chainId, "mezo"), ve: c.ve, voter: c.voter,
     vault: (env.LOCKWATCH_VAULT_MEZO as Address | undefined) ?? c.vault, legacyVaults: [], rescue: null,
-    distributor: (env.REBASE_DISTRIBUTOR_MEZO as Address | undefined) ?? c.distributor, rebaseMin: BigInt(env.REBASE_MIN_MEZO ?? 10n ** 16n), // 0.01 MEZO
+    distributor: (env.REBASE_DISTRIBUTOR_MEZO as Address | undefined) ?? c.distributor, rebaseMin: BigInt(env.REBASE_MIN_MEZO ?? 10n ** 16n), rebaseMaxClaims: Number(env.REBASE_MAX_PER_RUN ?? 20), rebaseBudgetMs: Number(env.REBASE_BUDGET_MS ?? 90_000), // 0.01 MEZO
   };
 }
 
@@ -45,7 +47,7 @@ function loadBtc(env: NodeJS.ProcessEnv, chainId: ChainId): Config {
       .filter((v) => v.toLowerCase() !== ((env.LOCKWATCH_VAULT ?? ADDRESSES[chainId].lockwatchVault ?? "") as string).toLowerCase()),
     rescue: (env.LOCKWATCH_RESCUE as Address | undefined) ?? ADDRESSES[chainId].lockwatchRescue,
     distributor: (env.REBASE_DISTRIBUTOR as Address | undefined) ?? ADDRESSES[chainId].rebaseDistributor,
-    rebaseMin: BigInt(env.REBASE_MIN_BTC ?? 10n ** 12n), // 0.000001 BTC
+    rebaseMin: BigInt(env.REBASE_MIN_BTC ?? 10n ** 12n), rebaseMaxClaims: Number(env.REBASE_MAX_PER_RUN ?? 20), rebaseBudgetMs: Number(env.REBASE_BUDGET_MS ?? 90_000), // 0.000001 BTC
     appUrl: env.APP_URL ?? "https://lockwatch.vercel.app",
     telegramToken: env.TELEGRAM_BOT_TOKEN,
     resendKey: env.RESEND_API_KEY,
