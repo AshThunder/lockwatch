@@ -89,6 +89,7 @@ export function rescueWanted(r: { icr: bigint; triggerIcr: bigint; radarRisk?: s
 
 // ---------------------------------------------------------------- keeper transparency
 export interface KeeperRun { job: string; ok: boolean; ts: number }
+export const KEEPER_JOBS = ["protect", "extend", "rewards", "rescue", "rebase"] as const;
 export function keeperStats(runs: KeeperRun[], now: number, cadence = 300) {
   const actions = runs.filter((r) => r.job !== "heartbeat");
   const ok = actions.filter((r) => r.ok).length;
@@ -103,7 +104,7 @@ export function keeperStats(runs: KeeperRun[], now: number, cadence = 300) {
     uptime24h: Math.min(1, slots / expected),
     lastHeartbeat: last || null,
     nextRun: last ? last + cadence : null,
-    byJob: Object.fromEntries(["protect", "extend", "rewards", "rescue"].map((j) => {
+    byJob: Object.fromEntries(KEEPER_JOBS.map((j) => {
       const xs = actions.filter((r) => r.job === j);
       return [j, { total: xs.length, ok: xs.filter((r) => r.ok).length }];
     })),

@@ -34,7 +34,7 @@ export default function Keeper() {
           <Stat label="Gas balance" value={bal === null ? "–" : `${bal.toFixed(4)} BTC`} tone={bal !== null && bal < LOW ? "text-signal" : undefined} sub={bal !== null && bal < LOW ? "Low. Top-up pending." : <ExplorerLink kind="address" id={d.keeper}>{short(d.keeper)}</ExplorerLink>} />
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-4">
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
           {Object.entries(d.byJob).map(([k, v]) => (
             <div key={k} className="flex items-baseline justify-between border-b border-hair pb-2 text-sm"><span className="text-mute">{JOB_NAME[k]}</span><span className="num text-paper">{v.ok}<span className="text-faint">/{v.total}</span></span></div>
           ))}

@@ -6,6 +6,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { Config } from "./config";
 import { log } from "./config";
 import type { Notify } from "./keeper";
+import { keeperWallet, buffered } from "./signer";
 
 type Hash = `0x${string}`;
 const TYPICAL_REDEMPTION = BigInt(process.env.TYPICAL_REDEMPTION_MUSD ?? "10000") * 10n ** 18n;
@@ -144,8 +145,7 @@ const rewardAbi = parseAbi([
 
 function writer(cfg: Config) {
   if (!cfg.keeperKey) throw new Error("KEEPER_PRIVATE_KEY not set");
-  const account = privateKeyToAccount(cfg.keeperKey);
-  return { account, wallet: createWalletClient({ account, chain: chainById(cfg.chainId), transport: http(cfg.rpc) }) };
+  return keeperWallet(cfg.keeperKey, cfg.chainId, cfg.rpc);
 }
 const waitFor = (client: PublicClient) => async (hash: Hash) => (await client.waitForTransactionReceipt({ hash, timeout: 120_000 })).status;
 
@@ -221,7 +221,7 @@ export function viemRescueChain(client: PublicClient, cfg: Config): RescueChain 
       const { request } = await client.simulateContract({ account, address: rescue, abi: lockwatchRescueAbi, functionName: "rescue", args: [b, zeroAddress, zeroAddress] });
       const gas = await client.estimateContractGas({ account, address: rescue, abi: lockwatchRescueAbi, functionName: "rescue", args: [b, zeroAddress, zeroAddress] });
       log("keeper", "rescue", { borrower: b, gas });
-      return wallet.writeContract({ ...request, gas: (gas * 13n) / 10n });
+      return wallet.writeContract({ ...request, gas: buffered(gas) });
     },
     wait: waitFor(client),
   };
@@ -238,37 +238,62 @@ export interface RebaseChain {
 export const REBASE_BATCH = 25;
 const WEEK_S = 7 * 86400;
 
-/** Once per epoch: claim every rebase at or above `min` for every indexed lock of this escrow. Anyone may call
+export const REBASE_TRIES = 3;
+/** Each epoch: claim every rebase at or above `min` for every indexed lock of this escrow. Anyone may call
  *  RewardsDistributor.claim; the protocol itself compounds into a live lock or pays the owner of an expired one, so
- *  the keeper only spends gas. A batch that fails estimation is retried per lock so one odd id (e.g. a LOCKED
- *  managed deposit) can't block the rest. The epoch is marked done after one attempt, so failures never loop gas. */
+ *  the keeper only spends gas. Strictly sequential: one tx in flight, each receipt awaited, and the lock's
+ *  claimable re-read right before its send so nothing is sent for a lock with nothing left (the first claim of a
+ *  week checkpoints the distributor, which can change every other lock's amount). A batch that fails is retried
+ *  per lock so one odd id can't block the rest. After a successful round the amounts are re-read once more (the
+ *  checkpoint can make new locks due). The epoch is marked done when nothing is left due or after REBASE_TRIES
+ *  passes, so failures never loop gas. */
 export async function rebaseTick(db: Db, chain: RebaseChain, chainId: number, now: number, min: bigint) {
   const epoch = Math.floor(now / WEEK_S) * WEEK_S;
-  const key = `rebase:${chainId}`;
+  const key = `rebase:${chainId}`, triesKey = `rebase-tries:${chainId}`;
   if (Number((await repo.getCursor(db, key)) ?? 0) >= epoch) return { skipped: "done this epoch" };
   if (!(await chain.ready())) return { skipped: "distributor not updated for this epoch" };
+  const [tEpoch, tN] = String((await repo.getCursor(db, triesKey)) ?? "0:0").split(":").map(Number);
+  const tries = (tEpoch === epoch ? tN : 0) + 1;
+  await repo.setCursor(db, triesKey, `${epoch}:${tries}`);
   const ids = (await repo.liveLocks(db, chainId)).map((r) => BigInt(r.id));
-  const amounts: bigint[] = [];
-  for (let i = 0; i < ids.length; i += 200) amounts.push(...(await chain.claimable(ids.slice(i, i + 200))));
-  const due = ids.map((id, i) => ({ id, amt: amounts[i] ?? 0n })).filter((x) => x.amt >= min);
+  const read = async (xs: bigint[]) => {
+    const amounts: bigint[] = [];
+    for (let i = 0; i < xs.length; i += 200) amounts.push(...(await chain.claimable(xs.slice(i, i + 200))));
+    return xs.map((id, i) => ({ id, amt: amounts[i] ?? 0n })).filter((x) => x.amt >= min);
+  };
   const out: { ids: string[]; ok: boolean; hash?: string; err?: string }[] = [];
   const record = async (batch: { id: bigint; amt: bigint }[], ok: boolean, hash?: string, err?: string) => {
     for (const x of batch) await repo.logRun(db, { chainId, job: "rebase", subject: x.id.toString(), ok, txHash: hash, detail: ok ? x.amt.toString() : (err ?? "tx reverted").slice(0, 200), ts: now });
     out.push({ ids: batch.map((x) => x.id.toString()), ok, hash, err });
   };
-  const run = async (batch: { id: bigint; amt: bigint }[]): Promise<void> => {
+  const run = async (batch0: { id: bigint; amt: bigint }[]): Promise<void> => {
+    const batch = await read(batch0.map((x) => x.id)); // fresh amounts; skips locks with nothing claimable now
+    if (!batch.length) return;
+    let hash: Hash | undefined;
     try {
-      const hash = await chain.claimMany(batch.map((x) => x.id));
-      await record(batch, (await chain.wait(hash)) === "success", hash);
+      hash = await chain.claimMany(batch.map((x) => x.id));
+      if ((await chain.wait(hash)) === "success") return record(batch, true, hash);
     } catch (e) {
       if (batch.length > 1) { for (const x of batch) await run([x]); return; }
-      await record(batch, false, undefined, String(e));
+      return record(batch, false, hash, String(e));
     }
+    if (batch.length > 1) { for (const x of batch) await run([x]); return; }
+    await record(batch, false, hash);
   };
-  for (let i = 0; i < due.length; i += REBASE_BATCH) await run(due.slice(i, i + REBASE_BATCH));
-  await repo.setCursor(db, key, String(epoch));
-  log("keeper", "rebase", { ledger: chainId, candidates: ids.length, due: due.length, batches: out.length, ok: out.filter((o) => o.ok).length });
-  return { due: due.length, batches: out };
+  let due = await read(ids), total = 0;
+  const seen = new Set<string>();
+  for (let round = 0; round < 2 && due.length; round++) {
+    total += due.length;
+    due.forEach((x) => seen.add(x.id.toString()));
+    const before = out.filter((o) => o.ok).length;
+    for (let i = 0; i < due.length; i += REBASE_BATCH) await run(due.slice(i, i + REBASE_BATCH));
+    if (out.filter((o) => o.ok).length === before) break;
+    due = (await read(ids)).filter((x) => !seen.has(x.id.toString())); // newly due after a checkpoint
+  }
+  const left = (await read(ids)).length;
+  if (!left || tries >= REBASE_TRIES) await repo.setCursor(db, key, String(epoch));
+  log("keeper", "rebase", { ledger: chainId, candidates: ids.length, due: total, batches: out.length, ok: out.filter((o) => o.ok).length, left, try: tries });
+  return { due: total, batches: out, left };
 }
 
 const distAbi = parseAbi([
@@ -291,8 +316,10 @@ export function viemRebaseChain(client: PublicClient, cfg: Config): RebaseChain 
       return rs.map((r) => (r.status === "success" ? (r.result as bigint) : 0n));
     },
     claimMany: async (ids) => {
+      const { request } = await client.simulateContract({ account, address: dist, abi: distAbi, functionName: "claimMany", args: [ids] });
       const gas = await client.estimateContractGas({ account, address: dist, abi: distAbi, functionName: "claimMany", args: [ids] });
-      return wallet.writeContract({ address: dist, abi: distAbi, functionName: "claimMany", args: [ids], gas: (gas * 13n) / 10n + 20_000n });
+      // floor: ~420k per lock observed on testnet; the 06:24 WAT singles died out of gas at a 47,929 limit
+      return wallet.writeContract({ ...request, gas: buffered(gas, 300_000n + 450_000n * BigInt(ids.length)) });
     },
     wait: waitFor(client),
   };
