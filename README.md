@@ -6,6 +6,19 @@
 
 ![Lockwatch home](docs/screenshots/home-desktop.png)
 
+## Live proof: auto-protect, end to end
+veBTC lock **#380 (0.004 BTC)** on Mezo testnet expired on Thu 22 Oct 2026 at 00:00 UTC. The owner did nothing:
+
+| When (UTC) | What happened |
+|---|---|
+| Oct 21, 00:00 | Telegram: 24h warning, "Auto-protect is on" |
+| Oct 22, 00:00 | Lock expires. Telegram: the keeper will claim it |
+| Oct 22, 01:00 | Keeper calls `LockwatchVault.protectBatch`: votes reset, lock withdrawn, **0.004 BTC sent to the owner**. Telegram: "Protected veBTC lock #380: 0.004 BTC → returned to your wallet" |
+
+Tx: [0x70012fd1…a8fd13](https://explorer.test.mezo.org/tx/0x70012fd1548ef9bf72ba7b3f5f93438a297a29452f8db499081ee28243a8fd13) (block 16289643, status success). The vault ended the transaction holding no BTC.
+
+<p align="center"><img src="docs/proof/lock-380-telegram.jpg" width="320" alt="Lockwatch Telegram alerts for lock #380" /></p>
+
 ## Built on MEZO and MUSD
 - **veMEZO, first-class.** Every veMEZO lock is indexed alongside veBTC. Its own vault instance ([0x24fd…27ae](https://explorer.test.mezo.org/address/0x24fd63DE4274c71B51cA08adEd519B6cC72f27ae), verified) returns MEZO to the owner at expiry or re-locks it for up to 4 years. Auto-extend keeps boost weight at the 4-year max, and reward auto-claim collects BoostVoter bribes. The UI has a veBTC / veMEZO switch on every lock view, with MEZO totals kept separate from BTC.
 - **MUSD.** Expired veBTC can open an MUSD loan in the owner's name, Loan Rescue defends MUSD troves, and the Redemption Radar shows each borrower's place in the redemption queue.
