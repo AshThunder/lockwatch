@@ -28,7 +28,7 @@ export function CalendarExport({ address, compact = false }: { address: string; 
 
 /** One-tap Google Calendar event for a single unlock. */
 export function GoogleCalLink({ id, amount, end, voted, mode, asset, className = "" }: { id: string; amount: string; end: number; voted?: boolean; mode?: string | null; asset?: "btc" | "mezo"; className?: string }) {
-  const app = typeof window === "undefined" ? "https://lockwatch.vercel.app" : window.location.origin;
+  const app = typeof window === "undefined" ? "https://lockwatch.online" : window.location.origin;
   return (
     <a className={`inline-flex min-h-[32px] items-center gap-1.5 text-xs text-mute hover:text-paper ${className}`} target="_blank" rel="noreferrer"
       href={googleCalendarUrl({ id, amount, end, voted, asset, protectedMode: mode ?? null }, app)} aria-label={`Add lock #${id} unlock to Google Calendar`}>

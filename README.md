@@ -2,7 +2,7 @@
 <h1 align="center">Lockwatch</h1>
 <p align="center"><b>NEVER MISS AN UNLOCK.<br/>NEVER LEAVE BTC IDLE.</b></p>
 <p align="center">Expiry protection for <b>veBTC and veMEZO</b> locks on Mezo: alerts before a lock ends, a keeper that acts the moment it does, and a Redemption Radar for MUSD borrowers.</p>
-<p align="center"><a href="https://lockwatch.vercel.app"><b>Live demo: lockwatch.vercel.app</b></a> · Telegram: <a href="https://t.me/Lockwatch_bot">@Lockwatch_bot</a> · Mezo testnet (chain 31611)</p>
+<p align="center"><a href="https://lockwatch.online"><b>Live demo: lockwatch.online</b></a> · Telegram: <a href="https://t.me/Lockwatch_bot">@Lockwatch_bot</a> · Mezo testnet (chain 31611)</p>
 
 ![Lockwatch home](docs/screenshots/home-desktop.png)
 
@@ -117,7 +117,7 @@ flowchart LR
 | Approve vault v2 for the e2e wallet | [0x1694c457…ee4d4](https://explorer.test.mezo.org/tx/0x1694c457c4bc091c4e5874ba931bca198f68cce1d64af3645e7d4e66829ee4d4) |
 | Turn on reward auto-claim (#380) | [0xf50d41d8…e9bcb](https://explorer.test.mezo.org/tx/0xf50d41d89b07cc51a97c944dcd8a9c2f1c17ef6b6e3f30e372939698e96e9bcb) |
 
-Also verified live on lockwatch.vercel.app with real wallet signatures: calendar feed, watchlist, multi-wallet linking (a replayed signature is rejected), settings readback, and Telegram + email alert delivery.
+Also verified live on lockwatch.online with real wallet signatures: calendar feed, watchlist, multi-wallet linking (a replayed signature is rejected), settings readback, and Telegram + email alert delivery.
 
 ## Testing
 | Suite | Tests |
