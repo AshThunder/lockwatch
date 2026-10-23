@@ -48,7 +48,7 @@ function loadBtc(env: NodeJS.ProcessEnv, chainId: ChainId): Config {
     rescue: (env.LOCKWATCH_RESCUE as Address | undefined) ?? ADDRESSES[chainId].lockwatchRescue,
     distributor: (env.REBASE_DISTRIBUTOR as Address | undefined) ?? ADDRESSES[chainId].rebaseDistributor,
     rebaseMin: BigInt(env.REBASE_MIN_BTC ?? 10n ** 12n), rebaseMaxClaims: Number(env.REBASE_MAX_PER_RUN ?? 20), rebaseBudgetMs: Number(env.REBASE_BUDGET_MS ?? 90_000), // 0.000001 BTC
-    appUrl: env.APP_URL ?? "https://lockwatch.vercel.app",
+    appUrl: env.APP_URL ?? "https://lockwatch.online",
     telegramToken: env.TELEGRAM_BOT_TOKEN,
     resendKey: env.RESEND_API_KEY,
     emailFrom: env.EMAIL_FROM ?? "Lockwatch <alerts@lockwatch.app>",

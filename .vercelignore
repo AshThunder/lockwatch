@@ -1,0 +1,6 @@
+.env*
+.vercel
+node_modules
+*.key
+secrets
+**/secrets

@@ -1,14 +1,14 @@
-/** LIVE API pass against lockwatch.vercel.app with real SIWE signatures (keys never printed). */
+/** LIVE API pass against lockwatch.online with real SIWE signatures (keys never printed). */
 import { readFileSync, writeFileSync } from "node:fs";
 import { createSiweMessage } from "viem/siwe";
 import { privateKeyToAccount } from "viem/accounts";
-const BASE = "https://lockwatch.vercel.app", S = "/workspace/lockwatch/secrets/";
+const BASE = "https://lockwatch.online", S = "/workspace/lockwatch/secrets/";
 const acct = (n: string) => privateKeyToAccount(readFileSync(S + n, "utf8").trim() as `0x${string}`);
 const A = acct("e2e_key"), B = acct("e2e2_key");
 const res: Record<string, unknown> = {};
 async function siwe(who: typeof A, statement: string) {
   const { nonce } = await (await fetch(BASE + "/api/auth/nonce")).json();
-  const message = createSiweMessage({ address: who.address, chainId: 31611, domain: "lockwatch.vercel.app", nonce, uri: BASE, version: "1", statement });
+  const message = createSiweMessage({ address: who.address, chainId: 31611, domain: "lockwatch.online", nonce, uri: BASE, version: "1", statement });
   return { message, signature: await who.signMessage({ message }) };
 }
 const call = async (path: string, method = "GET", body?: unknown) => { const r = await fetch(BASE + path, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }); const t = await r.text(); return { status: r.status, body: t.slice(0, 600) }; };

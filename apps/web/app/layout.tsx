@@ -10,7 +10,7 @@ const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500"], variab
 const title = "Lockwatch — never miss an unlock. Never leave BTC idle.";
 const description = "Never miss a veBTC unlock on Mezo. Lockwatch alerts you before each Thursday expiry, auto-extends voting power, auto-claims rewards, rescues MUSD loans, and claims, re-locks or borrows against ended locks so your BTC never sits idle.";
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.APP_URL ?? "https://lockwatch.vercel.app"),
+  metadataBase: new URL(process.env.APP_URL ?? "https://lockwatch.online"),
   title: { default: title, template: "%s · Lockwatch" },
   description,
   icons: { icon: "/favicon.svg" },
